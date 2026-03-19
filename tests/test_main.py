@@ -14,6 +14,12 @@ def test_root_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
+def test_health_returns_ok():
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 VALID_SOLVE_BODY = {
     "prompt": "Create an employee named Ola Nordmann",
     "files": [],

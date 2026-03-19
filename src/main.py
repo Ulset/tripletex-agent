@@ -3,9 +3,11 @@ import logging
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from src.config import settings
+from src.logging_config import setup_logging
 from src.models import SolveRequest, SolveResponse
 from src.orchestrator import TaskOrchestrator
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Tripletex AI Agent")
@@ -21,6 +23,11 @@ async def verify_api_key(request: Request) -> None:
 
 @app.get("/")
 async def root():
+    return {"status": "ok"}
+
+
+@app.get("/health")
+async def health():
     return {"status": "ok"}
 
 
