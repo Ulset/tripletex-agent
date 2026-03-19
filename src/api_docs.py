@@ -82,6 +82,101 @@ def _extract_schema_fields(spec: dict, schema: dict, depth: int = 0) -> list[str
     return fields
 
 
+def _match_runtime_path_to_spec(runtime_path: str, spec: dict) -> str | None:
+    """Match a runtime path like /v2/invoice/123/:payment to a spec path like /invoice/{id}/:payment."""
+    # Strip /v2 prefix — spec paths don't have it
+    path = runtime_path
+    if path.startswith("/v2"):
+        path = path[3:]
+
+    runtime_segments = path.strip("/").split("/")
+    paths = spec.get("paths", {})
+
+    best_match = None
+    best_literal_count = -1
+
+    for spec_path in paths:
+        spec_segments = spec_path.strip("/").split("/")
+        if len(spec_segments) != len(runtime_segments):
+            continue
+
+        match = True
+        literal_count = 0
+        for runtime_seg, spec_seg in zip(runtime_segments, spec_segments):
+            if spec_seg.startswith("{") and spec_seg.endswith("}"):
+                continue  # Param segment matches anything
+            if runtime_seg != spec_seg:
+                match = False
+                break
+            literal_count += 1
+
+        if match and literal_count > best_literal_count:
+            best_match = spec_path
+            best_literal_count = literal_count
+
+    return best_match
+
+
+def get_endpoint_schema(method: str, endpoint: str) -> str | None:
+    """Get schema fields for an endpoint, used to enrich 422 errors."""
+    try:
+        spec = _load_spec()
+    except Exception:
+        return None
+
+    spec_path = _match_runtime_path_to_spec(endpoint, spec)
+    if not spec_path:
+        return None
+
+    path_info = spec.get("paths", {}).get(spec_path, {})
+    method_info = path_info.get(method.lower())
+    if not method_info:
+        return None
+
+    # Try request body fields
+    params = method_info.get("parameters", [])
+    body_params = [p for p in params if p.get("in") == "body"]
+    if body_params:
+        body_schema = body_params[0].get("schema", {})
+        fields = _extract_schema_fields(spec, body_schema)
+        if fields:
+            return f"Valid fields for {method.upper()} /v2{spec_path}:\n" + "\n".join(fields)
+
+    # Fall back to query params
+    query_params = [p for p in params if p.get("in") == "query"]
+    if query_params:
+        param_strs = []
+        for p in query_params:
+            req = " (REQUIRED)" if p.get("required") else ""
+            param_strs.append(f"  {p['name']}{req}")
+        return f"Valid query params for {method.upper()} /v2{spec_path}:\n" + "\n".join(param_strs)
+
+    return None
+
+
+def _get_schema_field_names(spec: dict, schema: dict, depth: int = 0) -> set[str]:
+    """Return a flat set of lowercase field names from a schema, recursing into array items."""
+    if depth > 1:
+        return set()
+
+    if "$ref" in schema:
+        schema = _resolve_ref(spec, schema["$ref"])
+
+    names = set()
+    props = schema.get("properties", {})
+    for name, prop in props.items():
+        names.add(name.lower())
+        actual = prop
+        if "$ref" in prop:
+            actual = _resolve_ref(spec, prop["$ref"])
+        # Recurse into array items
+        if actual.get("type") == "array":
+            items = actual.get("items", {})
+            names |= _get_schema_field_names(spec, items, depth + 1)
+
+    return names
+
+
 def search_api_docs(query: str) -> str:
     """Search the Tripletex OpenAPI spec for endpoints matching a query.
 
@@ -112,6 +207,18 @@ def search_api_docs(query: str) -> str:
                     if query_lower in searchable or any(w in searchable for w in query_words):
                         path_match = True
                         break
+
+        if not path_match:
+            # Fallback: check if query words match request body field names
+            for method_info in methods.values():
+                if isinstance(method_info, dict):
+                    body_params = [p for p in method_info.get("parameters", []) if p.get("in") == "body"]
+                    if body_params:
+                        body_schema = body_params[0].get("schema", {})
+                        field_names = _get_schema_field_names(spec, body_schema)
+                        if any(w in field_names for w in query_words):
+                            path_match = True
+                            break
 
         if not path_match:
             continue

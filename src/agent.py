@@ -5,7 +5,7 @@ import uuid
 
 from openai import OpenAI
 
-from src.api_docs import search_api_docs
+from src.api_docs import get_endpoint_schema, search_api_docs
 from src.tripletex_client import TripletexAPIError, TripletexClient
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,12 @@ class TripletexAgent:
                     })
                 except TripletexAPIError as e:
                     errors += 1
-                    error_msg = json.dumps({"error": str(e)})
+                    error_dict = {"error": str(e)}
+                    if e.status_code == 422:
+                        schema_hint = get_endpoint_schema(method, endpoint)
+                        if schema_hint:
+                            error_dict["schema_hint"] = schema_hint
+                    error_msg = json.dumps(error_dict, ensure_ascii=False)
                     logger.warning("API error: %s", error_msg)
                     messages.append({
                         "role": "tool",

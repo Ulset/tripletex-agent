@@ -317,9 +317,10 @@ class TestSelfHealFromValidationError:
     """
 
     @responses.activate
+    @patch("src.agent.get_endpoint_schema", return_value=None)
     @patch("src.agent.OpenAI")
     @patch("src.file_processor.OpenAI")
-    def test_agent_retries_after_422_with_missing_field(self, mock_file_openai, mock_agent_openai):
+    def test_agent_retries_after_422_with_missing_field(self, mock_file_openai, mock_agent_openai, mock_get_schema):
         from src.orchestrator import TaskOrchestrator
 
         mock_openai = MagicMock()
@@ -613,6 +614,134 @@ class TestPaymentFullWorkflow:
         assert "paymentDate=2026-03-19" in payment_req.url
         assert "paymentTypeId=3" in payment_req.url
         assert "paidAmount=25000" in payment_req.url
+
+
+class TestSchemaHintOn422:
+    """Regression: 422 errors should include endpoint schema so the LLM can self-correct.
+
+    Real failure: Agent guessed wrong field names, got 422 "field doesn't exist",
+    then wasted iterations on doc searches instead of knowing the correct fields.
+    """
+
+    @responses.activate
+    @patch("src.agent.get_endpoint_schema")
+    @patch("src.agent.OpenAI")
+    @patch("src.file_processor.OpenAI")
+    def test_422_error_includes_schema_hint(self, mock_file_openai, mock_agent_openai, mock_get_schema):
+        from src.orchestrator import TaskOrchestrator
+
+        mock_get_schema.return_value = "Valid fields for POST /v2/order:\n  customer (REQUIRED): object\n  deliveryDate (REQUIRED): string"
+
+        mock_openai = MagicMock()
+        mock_agent_openai.return_value = mock_openai
+        mock_openai.chat.completions.create.side_effect = [
+            # First attempt: wrong field name
+            _make_tool_call_response("POST", "/v2/order", body={
+                "customer": {"id": 1},
+                "quantity": 5,
+            }, tool_call_id="c1"),
+            # Second attempt: correct fields after seeing schema hint
+            _make_tool_call_response("POST", "/v2/order", body={
+                "customer": {"id": 1},
+                "deliveryDate": "2026-04-01",
+                "orderLines": [],
+            }, tool_call_id="c2"),
+            _make_text_response("Order created"),
+        ]
+
+        # First call fails with 422
+        responses.add(
+            responses.POST, f"{TRIPLETEX_BASE}/order",
+            json={"message": "Validation failed", "details": "quantity: Feltet eksisterer ikke i objektet"},
+            status=422,
+        )
+        # Second call succeeds
+        responses.add(
+            responses.POST, f"{TRIPLETEX_BASE}/order",
+            json={"value": {"id": 100}},
+            status=201,
+        )
+
+        result = TaskOrchestrator(_settings()).solve(
+            _solve_request("Opprett ordre for kunde 1")
+        )
+
+        assert result.status == "completed"
+        # get_endpoint_schema should have been called for the 422
+        mock_get_schema.assert_called_once_with("POST", "/v2/order")
+
+        # Verify the schema hint was included in the tool message to the LLM
+        llm_calls = mock_openai.chat.completions.create.call_args_list
+        # Second LLM call should have messages including the 422 error with schema_hint
+        second_call_messages = llm_calls[1].kwargs.get("messages", llm_calls[1][1] if len(llm_calls[1]) > 1 else [])
+        tool_messages = [m for m in second_call_messages if isinstance(m, dict) and m.get("role") == "tool"]
+        assert any("schema_hint" in m.get("content", "") for m in tool_messages)
+
+    @responses.activate
+    @patch("src.agent.get_endpoint_schema")
+    @patch("src.agent.OpenAI")
+    @patch("src.file_processor.OpenAI")
+    def test_non_422_error_no_schema_hint(self, mock_file_openai, mock_agent_openai, mock_get_schema):
+        from src.orchestrator import TaskOrchestrator
+
+        mock_openai = MagicMock()
+        mock_agent_openai.return_value = mock_openai
+        mock_openai.chat.completions.create.side_effect = [
+            _make_tool_call_response("GET", "/v2/customer/99999", tool_call_id="c1"),
+            _make_text_response("Customer not found"),
+        ]
+
+        # 404 error, not 422
+        responses.add(
+            responses.GET, f"{TRIPLETEX_BASE}/customer/99999",
+            json={"message": "Not found"},
+            status=404,
+        )
+
+        result = TaskOrchestrator(_settings()).solve(
+            _solve_request("Finn kunde 99999")
+        )
+
+        assert result.status == "completed"
+        # get_endpoint_schema should NOT have been called for a 404
+        mock_get_schema.assert_not_called()
+
+
+class TestPathMatching:
+    """Test that runtime paths are correctly matched to OpenAPI spec paths."""
+
+    def test_payment_path_matches_spec(self):
+        from src.api_docs import _match_runtime_path_to_spec
+
+        fake_spec = {
+            "paths": {
+                "/invoice/{id}": {},
+                "/invoice/{id}/:payment": {},
+                "/invoice/paymentType": {},
+            }
+        }
+
+        result = _match_runtime_path_to_spec("/v2/invoice/123/:payment", fake_spec)
+        assert result == "/invoice/{id}/:payment"
+
+    def test_simple_path_matches(self):
+        from src.api_docs import _match_runtime_path_to_spec
+
+        fake_spec = {
+            "paths": {
+                "/customer": {},
+                "/customer/{id}": {},
+            }
+        }
+
+        assert _match_runtime_path_to_spec("/v2/customer", fake_spec) == "/customer"
+        assert _match_runtime_path_to_spec("/v2/customer/42", fake_spec) == "/customer/{id}"
+
+    def test_no_match_returns_none(self):
+        from src.api_docs import _match_runtime_path_to_spec
+
+        fake_spec = {"paths": {"/customer": {}}}
+        assert _match_runtime_path_to_spec("/v2/nonexistent/endpoint", fake_spec) is None
 
 
 class TestMultipleDepartments:
