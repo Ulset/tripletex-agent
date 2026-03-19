@@ -18,15 +18,19 @@ SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description
 - POST /v2/employee — create employee. Include: firstName, lastName, userType("STANDARD"), email, department(id), dateOfBirth if given.
 - POST /v2/employee/employment — create employment (start date). Include: employee(id), startDate.
 - GET /v2/department?fields=id&count=1 — get a department ID (needed for employee creation).
-- POST /v2/customer — create customer. Include: name, organizationNumber, email, phoneNumber. For addresses use postalAddress: {"addressLine1": "Street 1", "postalCode": "0001", "city": "Oslo"}.
+- EMPLOYEE WORKFLOW: (1) GET /v2/department?fields=id&count=1 → departmentId. (2) POST /v2/employee with firstName, lastName, userType("STANDARD"), email, department(id), dateOfBirth. (3) IF start date given: POST /v2/employee/employment with employee(id), startDate. Employment is ALWAYS a separate POST — never put startDate or employment fields on the employee object.
+- POST /v2/customer — create customer. Include: name, organizationNumber, email, phoneNumber.
+- ADDRESSES: postalAddress is ALWAYS a JSON object: {"addressLine1": "...", "postalCode": "...", "city": "..."}. NEVER send it as a string.
 - POST /v2/supplier — create supplier. Include: name, organizationNumber, email, isSupplier(true). For addresses use postalAddress: {"addressLine1": "...", "postalCode": "...", "city": "..."}.
 - POST /v2/product — create product. Include: name, number, priceExcludingVatCurrency.
 - POST /v2/project — create project. Include: name, number, projectManager(id), startDate.
 - POST /v2/department — create department. Include: name, departmentNumber.
 - POST /v2/order — create order. Include: customer(id), deliveryDate, orderLines.
 - POST /v2/invoice — create invoice from order. Include: orderId, invoiceDate, sendMethod.
-- PUT /v2/invoice/{id}/:payment — register payment. Params: paymentDate, paymentTypeId, paidAmount.
-- GET /v2/invoice?invoiceDateFrom=2020-01-01&invoiceDateTo=2030-12-31 — list invoices.
+- PUT /v2/invoice/{id}/:payment — register payment. Use QUERY PARAMS (not body): paymentDate, paymentTypeId, paidAmount, paidAmountCurrency.
+- GET /v2/invoice/paymentType — list payment types. Use "Bankinnskudd" (bank deposit) by default.
+- GET /v2/invoice?invoiceDateFrom=2000-01-01&invoiceDateTo=2030-12-31 — list invoices. Both date params are REQUIRED.
+- PAYMENT WORKFLOW: (1) GET /v2/customer?organizationNumber=X → customerId. (2) GET /v2/invoice?invoiceDateFrom=2000-01-01&invoiceDateTo=2030-12-31&customerId=X → invoice ID + amountOutstanding. (3) GET /v2/invoice/paymentType → paymentTypeId for "Bankinnskudd". (4) PUT /v2/invoice/{id}/:payment with QUERY PARAMS paymentDate=YYYY-MM-DD, paymentTypeId=X, paidAmount=amountOutstanding, paidAmountCurrency=amountOutstanding.
 - GET /v2/employee?email=x — find employee by email.
 - GET /v2/customer?organizationNumber=x — find customer by org number.
 
@@ -118,6 +122,7 @@ class TripletexAgent:
         start_time = time.time()
         api_calls = 0
         errors = 0
+        doc_searches = 0
 
         # Build the initial user message
         user_message = f"Task: {prompt}"
@@ -165,8 +170,12 @@ class TripletexAgent:
 
                 if func_name == "search_api_docs":
                     query = args.get("query", "")
-                    logger.info("Docs search: %s", query)
-                    result_str = search_api_docs(query)
+                    doc_searches += 1
+                    logger.info("Docs search: %s (count=%d)", query, doc_searches)
+                    if doc_searches > 2:
+                        result_str = "Doc search limit reached (max 2). Use the common endpoints from your instructions and fix based on the error message."
+                    else:
+                        result_str = search_api_docs(query)
                     logger.info("Docs result: %s", _truncate(result_str))
                     messages.append({
                         "role": "tool",
@@ -231,7 +240,7 @@ class TripletexAgent:
         elif method == "POST":
             return self.client.post(endpoint, json=body)
         elif method == "PUT":
-            return self.client.put(endpoint, json=body)
+            return self.client.put(endpoint, json=body, params=params)
         elif method == "DELETE":
             return self.client.delete(endpoint)
         else:

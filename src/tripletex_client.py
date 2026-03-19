@@ -85,8 +85,8 @@ class TripletexClient:
     def post(self, endpoint: str, json: dict | None = None) -> dict:
         return self._request("POST", endpoint, json=json)
 
-    def put(self, endpoint: str, json: dict | None = None) -> dict:
-        return self._request("PUT", endpoint, json=json)
+    def put(self, endpoint: str, json: dict | None = None, params: dict | None = None) -> dict:
+        return self._request("PUT", endpoint, json=json, params=params)
 
     def delete(self, endpoint: str) -> dict:
         return self._request("DELETE", endpoint)
