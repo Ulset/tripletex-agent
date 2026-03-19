@@ -44,3 +44,27 @@ Started: Thu Mar 19 18:44:20 CET 2026
   - Mock TripletexClient at `src.orchestrator.TripletexClient` to intercept API calls in orchestrator tests
   - test_main.py tests still pass because they mock at the orchestrator level
 ---
+
+## 2026-03-19 20:38 - US-004
+- Deleted src/plan_generator.py, src/plan_executor.py
+- Removed PlanStep, ExecutionPlan, ExecutionResult from src/models.py (also removed unused url_parse import)
+- Deleted tests/test_plan_generator.py, tests/test_plan_executor.py
+- Rewrote tests/test_integration.py for agent-based flow (5 tests: create employee, customer, invoice, error recovery, completed-on-failure)
+- Rewrote tests/test_multilang.py to test agent instead of PlanGenerator (6 tests)
+- All 86 remaining tests pass
+- Files changed: src/models.py, src/plan_generator.py (deleted), src/plan_executor.py (deleted), tests/test_plan_generator.py (deleted), tests/test_plan_executor.py (deleted), tests/test_integration.py (rewritten), tests/test_multilang.py (rewritten)
+- **Learnings for future iterations:**
+  - test_multilang.py imported ExecutionPlan — needed updating when models changed
+  - Went from 110 tests to 86 tests — the removed tests were for deleted plan code
+  - Integration tests now mock OpenAI tool call responses sequentially (side_effect list)
+---
+
+## 2026-03-19 20:42 - US-005
+- Added 7 logging verification tests to test_agent.py (TestAgentLogging class)
+- Tests verify: iteration number, tool call details, API response, API error, agent done message, max iterations warning, summary with counts and duration
+- Logging was already implemented in US-001's agent.py — this story added test coverage
+- Files changed: tests/test_agent.py (added TestAgentLogging class)
+- **Learnings for future iterations:**
+  - When testing logger calls with format strings (%d/%d), access mock call_args[0][1] for the format arguments rather than checking the formatted string
+  - Total test count is now 93 (23 agent + 70 others)
+---
