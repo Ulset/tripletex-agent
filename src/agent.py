@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+import uuid
 
 from openai import OpenAI
 
@@ -23,7 +24,8 @@ SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description
 - ADDRESSES: postalAddress is ALWAYS a JSON object: {"addressLine1": "...", "postalCode": "...", "city": "..."}. NEVER send it as a string.
 - POST /v2/supplier — create supplier. Include: name, organizationNumber, email, isSupplier(true). For addresses use postalAddress: {"addressLine1": "...", "postalCode": "...", "city": "..."}.
 - POST /v2/product — create product. Include: name, number, priceExcludingVatCurrency.
-- POST /v2/project — create project. Include: name, number, projectManager(id), startDate.
+- POST /v2/project — create project. Include: name, number, projectManager(id), startDate. NEVER use /v2/project/list — always POST to /v2/project directly.
+- PROJECT WORKFLOW: (1) GET /v2/employee?email=X → projectManager ID. (2) If customer link needed: GET /v2/customer?organizationNumber=X → customerId. (3) POST /v2/project with name, number, projectManager(id), startDate, and customer(id) if given.
 - POST /v2/department — create department. Include: name, departmentNumber.
 - POST /v2/order — create order. Include: customer(id), deliveryDate, orderLines.
 - POST /v2/invoice — create invoice from order. Include: orderId, invoiceDate, sendMethod.
@@ -77,7 +79,7 @@ CALL_API_TOOL = {
                 },
                 "params": {
                     "type": ["object", "null"],
-                    "description": "Query parameters for GET requests",
+                    "description": "Query parameters (used for GET and PUT requests)",
                 },
             },
             "required": ["method", "endpoint"],
@@ -119,10 +121,12 @@ class TripletexAgent:
         self.file_contents = file_contents
 
     def solve(self, prompt: str) -> None:
+        task_id = uuid.uuid4().hex[:8]
         start_time = time.time()
         api_calls = 0
         errors = 0
         doc_searches = 0
+        logger.info("[%s] Starting agent for prompt: %s", task_id, _truncate(prompt, 200))
 
         # Build the initial user message
         user_message = f"Task: {prompt}"
@@ -153,11 +157,11 @@ class TripletexAgent:
             # If no tool calls, the LLM considers the task done
             if choice.finish_reason != "tool_calls" or not choice.message.tool_calls:
                 final_message = choice.message.content or ""
-                logger.info("Agent done: %s", final_message)
+                logger.info("[%s] Agent done: %s", task_id, final_message)
                 duration = time.time() - start_time
                 logger.info(
-                    "Agent summary: api_calls=%d, errors=%d, iterations=%d, duration=%.2fs",
-                    api_calls, errors, iteration, duration,
+                    "[%s] Agent summary: api_calls=%d, errors=%d, doc_searches=%d, iterations=%d, duration=%.2fs",
+                    task_id, api_calls, errors, doc_searches, iteration, duration,
                 )
                 return
 
@@ -227,8 +231,8 @@ class TripletexAgent:
         # Max iterations reached
         duration = time.time() - start_time
         logger.warning(
-            "Agent reached max iterations (%d). api_calls=%d, errors=%d, duration=%.2fs",
-            MAX_ITERATIONS, api_calls, errors, duration,
+            "[%s] Agent reached max iterations (%d). api_calls=%d, errors=%d, doc_searches=%d, duration=%.2fs",
+            task_id, MAX_ITERATIONS, api_calls, errors, doc_searches, duration,
         )
 
     def _execute_api_call(
