@@ -24,3 +24,16 @@ class SolveRequest(BaseModel):
 
 class SolveResponse(BaseModel):
     status: str
+
+
+class PlanStep(BaseModel):
+    step_number: int
+    action: str  # GET, POST, PUT, DELETE
+    endpoint: str
+    payload: dict | None = None
+    params: dict | None = None
+    description: str
+
+
+class ExecutionPlan(BaseModel):
+    steps: list[PlanStep]
