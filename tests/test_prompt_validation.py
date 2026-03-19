@@ -161,6 +161,12 @@ class TestGenerateEndpointReference:
         ref = generate_endpoint_reference()
         assert "(REQ)" in ref
 
+    def test_schema_hint_not_too_large(self):
+        """Schema hints must be concise enough for the LLM to parse."""
+        result = get_endpoint_schema("POST", "/v2/order")
+        assert result is not None
+        assert len(result) < 3000, f"Schema hint too large: {len(result)} chars"
+
     def test_fallback_without_spec(self):
         """If the spec fails to load, registry-only info is still shown."""
         with patch("src.api_docs._load_spec", side_effect=Exception("no network")):

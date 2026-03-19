@@ -27,8 +27,8 @@ ENDPOINT_REGISTRY = [
     ("POST", "/product", ["name", "number"], ""),
     ("POST", "/project", ["name", "number", "projectManager", "startDate"], ""),
     ("POST", "/department", ["name", "departmentNumber"], ""),
-    ("POST", "/order", ["customer", "deliveryDate", "orderLines"],
-     "orderLines use 'count' for quantity"),
+    ("POST", "/order", ["customer", "deliveryDate", "orderDate", "orderLines"],
+     "orderLines: [{product:{id}, count, unitPriceExcludingVatCurrency}]. Use 'count' not 'quantity'. Price on OrderLine is unitPriceExcludingVatCurrency, NOT priceExcludingVatCurrency."),
     ("PUT", "/order/{id}/:invoice", [], "Create invoice FROM order. invoiceDate REQUIRED query param."),
     ("PUT", "/invoice/{id}/:payment", [], "QUERY PARAMS only, no body."),
     ("GET", "/invoice/paymentType", [], 'Find paymentTypeId for "Bankinnskudd"'),
@@ -84,9 +84,9 @@ def _get_response_schema(response_info: dict) -> dict | None:
     return response_info.get("schema") or None
 
 
-def _extract_schema_fields(spec: dict, schema: dict, depth: int = 0) -> list[str]:
+def _extract_schema_fields(spec: dict, schema: dict, depth: int = 0, max_depth: int = 2) -> list[str]:
     """Extract field names and types from a schema, resolving refs."""
-    if depth > 2:
+    if depth > max_depth:
         return []
 
     if "$ref" in schema:
@@ -110,7 +110,7 @@ def _extract_schema_fields(spec: dict, schema: dict, depth: int = 0) -> list[str
 
         # For nested objects, show their fields too
         if type_str == "object" or "$ref" in prop:
-            nested = _extract_schema_fields(spec, prop, depth + 1)
+            nested = _extract_schema_fields(spec, prop, depth + 1, max_depth)
             if nested:
                 fields.append(f"  {name}{req_marker}: object with fields: {', '.join(nested)}")
             else:
@@ -183,11 +183,15 @@ def get_endpoint_schema(method: str, endpoint: str) -> str | None:
         return None
 
     # Try request body fields (OpenAPI 3.x + 2.x)
+    # Use max_depth=0 for schema hints — top-level fields only to keep output concise
     body_schema = _get_request_body_schema(method_info)
     if body_schema:
-        fields = _extract_schema_fields(spec, body_schema)
+        fields = _extract_schema_fields(spec, body_schema, max_depth=0)
         if fields:
-            return f"Valid fields for {method.upper()} /v2{spec_path}:\n" + "\n".join(fields)
+            result = f"Valid fields for {method.upper()} /v2{spec_path}:\n" + "\n".join(fields)
+            if len(result) > 2000:
+                result = result[:2000] + "\n  ... (truncated, use search_api_docs for details)"
+            return result
 
     # Fall back to query params
     params = method_info.get("parameters", [])
