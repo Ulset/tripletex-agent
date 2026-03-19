@@ -229,3 +229,47 @@ class TestTripletexAgent:
         assert "body" in props
         assert "params" in props
         assert set(func["parameters"]["required"]) == {"method", "endpoint"}
+
+
+class TestSystemPrompt:
+    """Tests for US-002: System prompt content verification."""
+
+    def test_includes_api_reference(self):
+        from src.agent import SYSTEM_PROMPT
+        from src.knowledge import TRIPLETEX_API_REFERENCE
+        assert TRIPLETEX_API_REFERENCE in SYSTEM_PROMPT
+
+    def test_instructs_include_all_data(self):
+        from src.agent import SYSTEM_PROMPT
+        assert "EVERY piece of data" in SYSTEM_PROMPT or "ALL data" in SYSTEM_PROMPT
+        assert "organizationNumber" in SYSTEM_PROMPT
+        assert "email" in SYSTEM_PROMPT
+
+    def test_instructs_use_call_api_tool(self):
+        from src.agent import SYSTEM_PROMPT
+        assert "call_api" in SYSTEM_PROMPT
+
+    def test_instructs_text_response_when_done(self):
+        from src.agent import SYSTEM_PROMPT
+        assert "text message" in SYSTEM_PROMPT.lower() or "no tool call" in SYSTEM_PROMPT.lower()
+
+    def test_documents_response_shapes(self):
+        from src.agent import SYSTEM_PROMPT
+        assert "values" in SYSTEM_PROMPT
+        assert "value" in SYSTEM_PROMPT
+
+    def test_includes_efficiency_guidelines(self):
+        from src.agent import SYSTEM_PROMPT
+        assert "Minimize" in SYSTEM_PROMPT or "minimize" in SYSTEM_PROMPT
+        assert "Reuse IDs" in SYSTEM_PROMPT or "reuse IDs" in SYSTEM_PROMPT
+
+    def test_handles_all_seven_languages(self):
+        from src.agent import SYSTEM_PROMPT
+        for lang in ["Norwegian Bokmål", "Norwegian Nynorsk", "English", "Spanish", "Portuguese", "German", "French"]:
+            assert lang in SYSTEM_PROMPT, f"Missing language: {lang}"
+
+    def test_preserves_norwegian_characters(self):
+        from src.agent import SYSTEM_PROMPT
+        assert "æ" in SYSTEM_PROMPT
+        assert "ø" in SYSTEM_PROMPT
+        assert "å" in SYSTEM_PROMPT
