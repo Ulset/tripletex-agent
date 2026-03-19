@@ -2,26 +2,24 @@
 
 ### NM i AI 2026 — Norwegian National Championship in AI
 
-> An autonomous AI agent that reads accounting task prompts in 7 languages, reasons about what to do, and executes multi-step workflows against the [Tripletex](https://tripletex.no) ERP API — all without human intervention.
+> An AI agent that completes accounting tasks in [Tripletex](https://tripletex.no) by reading task prompts in 7 languages and making the necessary API calls.
 
 ---
 
 ## The Competition
 
-**NM i AI** (Norgesmesterskapet i AI) is Norway's national AI championship. The 2026 Tripletex challenge: build an agent that can complete real-world accounting tasks — creating customers, registering employees, issuing invoices, recording payments — by talking directly to a live Tripletex API.
+**NM i AI** (Norgesmesterskapet i AI) is Norway's national AI championship. The 2026 Tripletex challenge: build an agent that completes accounting tasks — creating customers, registering employees, issuing invoices, recording payments — via the Tripletex API.
 
 - **30 task types** across 56 variants (7 languages × 8 data sets)
 - **5-minute timeout** per task
 - Tasks arrive in Norwegian Bokmål, Nynorsk, English, Spanish, Portuguese, German, and French
-- The agent must figure out which API calls to make, in what order, with what data
-
-No templates. No hardcoded flows. Just an LLM, two tools, and an API.
+- The agent decides which API calls to make, in what order, with what data
 
 ---
 
 ## How It Works
 
-The agent uses a **ReAct (Reason-Act-Observe)** loop — it thinks about what to do, takes an action, observes the result, and repeats until the task is done.
+The agent uses a **ReAct (Reason-Act-Observe)** loop: decide on an action, execute it, observe the result, repeat.
 
 ```mermaid
 flowchart TD
@@ -68,13 +66,13 @@ The LLM has exactly two tools at its disposal:
 | `call_api` | Make HTTP requests (GET/POST/PUT/DELETE) to the Tripletex API |
 | `search_api_docs` | Search the Tripletex OpenAPI spec to discover endpoints and required fields |
 
-That's it. The LLM decides everything else — which endpoints to hit, what data to send, how to chain multi-step workflows, and how to recover from errors.
+The LLM decides which endpoints to call, what data to send, and how to recover from errors.
 
 ---
 
-## What It Can Do
+## Examples
 
-The agent handles complex, multi-step accounting workflows autonomously:
+Simple task — create a customer from a Norwegian prompt:
 
 ```
 "Opprett en kunde med navn Fjord Solutions AS,
@@ -82,13 +80,9 @@ The agent handles complex, multi-step accounting workflows autonomously:
  adresse Storgata 15, 3015 Drammen"
 ```
 
-The agent will:
-1. Parse the Norwegian prompt
-2. POST to `/v2/customer` with the correct structured payload
-3. Format the address as a proper JSON object (not a string!)
-4. Respond confirming the customer was created
+→ POST `/v2/customer` with structured address object
 
-More complex tasks chain multiple API calls:
+Multi-step task — register a payment:
 
 ```
 "Register a payment for invoice #42 — full amount, paid today"
@@ -180,4 +174,4 @@ gcloud run deploy tripletex-agent \
 
 ---
 
-*Built for [NM i AI 2026](https://ainm.no) — Norway's national championship in artificial intelligence.*
+*Built for [NM i AI 2026](https://ainm.no).*
