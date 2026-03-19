@@ -13,7 +13,7 @@ MAX_ITERATIONS = 15
 
 SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description (which may be in Norwegian Bokmål, Norwegian Nynorsk, English, Spanish, Portuguese, German, or French) and must complete it by making API calls to Tripletex.
 
-## Common Endpoints (use these directly — no need to search docs for these)
+## Common Endpoints — USE THESE DIRECTLY, do NOT search docs for these. All fields listed are REQUIRED unless marked optional.
 
 - POST /v2/employee — create employee. Include: firstName, lastName, userType("STANDARD"), email, department(id), dateOfBirth if given.
 - POST /v2/employee/employment — create employment (start date). Include: employee(id), startDate.

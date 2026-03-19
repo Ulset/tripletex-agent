@@ -92,18 +92,24 @@ def search_api_docs(query: str) -> str:
     paths = spec.get("paths", {})
     query_lower = query.lower()
 
+    # Split query into words for flexible matching — match if ANY word hits
+    query_words = [w for w in query_lower.split() if len(w) > 2]
+
     results = []
     for path, methods in paths.items():
-        # Match path or any operation description/summary
-        path_match = query_lower in path.lower()
+        path_lower = path.lower()
+        # Match if the full query OR any individual word matches path/summary/tags
+        path_match = query_lower in path_lower
         if not path_match:
-            # Check if query matches any operation summary/description
+            path_match = any(w in path_lower for w in query_words)
+        if not path_match:
             for method_info in methods.values():
                 if isinstance(method_info, dict):
                     summary = method_info.get("summary", "").lower()
                     desc = method_info.get("description", "").lower()
                     tags = " ".join(method_info.get("tags", [])).lower()
-                    if query_lower in summary or query_lower in desc or query_lower in tags:
+                    searchable = f"{summary} {desc} {tags}"
+                    if query_lower in searchable or any(w in searchable for w in query_words):
                         path_match = True
                         break
 
