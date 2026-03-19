@@ -19,7 +19,11 @@ class TripletexClient:
         self.auth = ("0", session_token)
 
     def _request(self, method: str, endpoint: str, **kwargs) -> dict:
-        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        # Strip /v2 prefix from endpoint if base_url already ends with /v2
+        clean_endpoint = endpoint.lstrip("/")
+        if self.base_url.rstrip("/").endswith("/v2") and clean_endpoint.startswith("v2/"):
+            clean_endpoint = clean_endpoint[3:]  # strip "v2/"
+        url = f"{self.base_url}/{clean_endpoint}"
         response = requests.request(method, url, auth=self.auth, timeout=30, **kwargs)
         logger.info("%s %s -> %d", method, endpoint, response.status_code)
 

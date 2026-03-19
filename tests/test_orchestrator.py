@@ -67,7 +67,7 @@ class TestTaskOrchestrator:
         # Mock Tripletex API
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={"value": {"id": 1, "firstName": "Ola", "lastName": "Nordmann"}},
             status=201,
         )
@@ -77,7 +77,7 @@ class TestTaskOrchestrator:
 
         assert result.status == "completed"
         assert len(responses.calls) == 1
-        assert responses.calls[0].request.url == f"{TRIPLETEX_BASE}/v2/employee"
+        assert responses.calls[0].request.url == f"{TRIPLETEX_BASE}/employee"
 
     @responses.activate
     @patch("src.plan_generator.OpenAI")
@@ -119,19 +119,19 @@ class TestTaskOrchestrator:
 
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/customer",
+            f"{TRIPLETEX_BASE}/customer",
             json={"value": {"id": 100, "name": "Acme AS"}},
             status=201,
         )
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/order",
+            f"{TRIPLETEX_BASE}/order",
             json={"value": {"id": 200, "customer": {"id": 100}, "orderDate": "2026-01-01"}},
             status=201,
         )
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/invoice",
+            f"{TRIPLETEX_BASE}/invoice",
             json={"value": {"id": 300, "orderId": 200}},
             status=201,
         )
@@ -210,13 +210,13 @@ class TestTaskOrchestrator:
         # First call fails with 422, second succeeds
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={"message": "lastName is required"},
             status=422,
         )
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={"value": {"id": 1, "firstName": "Ola", "lastName": "Nordmann"}},
             status=201,
         )
@@ -252,7 +252,7 @@ class TestTaskOrchestrator:
 
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={"value": {"id": 1, "firstName": "Ola", "lastName": "Nordmann"}},
             status=201,
         )
@@ -297,7 +297,7 @@ class TestTaskOrchestrator:
 
         responses.add(
             responses.GET,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={"fullResultSize": 0, "values": []},
             status=200,
         )

@@ -162,7 +162,7 @@ class TestIntegrationCreateEmployee:
 
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={
                 "value": {
                     "id": 42,
@@ -182,7 +182,7 @@ class TestIntegrationCreateEmployee:
 
         # Exactly one API call made
         assert len(responses.calls) == 1
-        assert responses.calls[0].request.url == f"{TRIPLETEX_BASE}/v2/employee"
+        assert responses.calls[0].request.url == f"{TRIPLETEX_BASE}/employee"
 
         body = json.loads(responses.calls[0].request.body)
         assert body["firstName"] == "Kari"
@@ -207,7 +207,7 @@ class TestIntegrationCreateCustomer:
 
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/customer",
+            f"{TRIPLETEX_BASE}/customer",
             json={
                 "value": {
                     "id": 55,
@@ -248,14 +248,14 @@ class TestIntegrationCreateInvoice:
         # Step 1 — customer
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/customer",
+            f"{TRIPLETEX_BASE}/customer",
             json={"value": {"id": 100, "name": "Fjord Tech AS"}},
             status=201,
         )
         # Step 2 — order
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/order",
+            f"{TRIPLETEX_BASE}/order",
             json={
                 "value": {
                     "id": 200,
@@ -268,7 +268,7 @@ class TestIntegrationCreateInvoice:
         # Step 3 — invoice
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/invoice",
+            f"{TRIPLETEX_BASE}/invoice",
             json={"value": {"id": 300, "orderId": 200, "invoiceDate": "2026-03-19"}},
             status=201,
         )
@@ -315,14 +315,14 @@ class TestIntegrationErrorRecovery:
         # First Tripletex call fails with 422
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={"message": "lastName is required"},
             status=422,
         )
         # Second Tripletex call succeeds
         responses.add(
             responses.POST,
-            f"{TRIPLETEX_BASE}/v2/employee",
+            f"{TRIPLETEX_BASE}/employee",
             json={
                 "value": {
                     "id": 42,
@@ -373,7 +373,7 @@ class TestIntegrationErrorRecovery:
         for _ in range(3):
             responses.add(
                 responses.POST,
-                f"{TRIPLETEX_BASE}/v2/employee",
+                f"{TRIPLETEX_BASE}/employee",
                 json={"message": "lastName is required"},
                 status=422,
             )
