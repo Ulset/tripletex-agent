@@ -1,0 +1,6 @@
+[     489ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://api.ainm.no/tripletex/my/submissions:0
+[     492ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://api.ainm.no/tripletex/sandbox:0
+[     494ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://api.ainm.no/teams/me:0
+[     494ms] [ERROR] Failed to load resource: the server responded with a status of 401 () @ https://api.ainm.no/users/me:0
+[   43544ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://api.ainm.no/teams/me:0
+[  130793ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://api.ainm.no/teams/me:0

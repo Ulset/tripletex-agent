@@ -43,8 +43,15 @@ class TripletexClient:
             try:
                 detail = response.json()
                 message = detail.get("message", response.text)
+                validation_msgs = detail.get("validationMessages", [])
                 logger.error("<<< %d %s | detail=%s", response.status_code, message,
-                             json_module.dumps(detail.get("validationMessages", []), ensure_ascii=False))
+                             json_module.dumps(validation_msgs, ensure_ascii=False))
+                # Include validation details in the error so the LLM can see them
+                if validation_msgs:
+                    field_errors = "; ".join(
+                        f"{v.get('field', '?')}: {v.get('message', '?')}" for v in validation_msgs
+                    )
+                    message = f"{message} [{field_errors}]"
             except Exception:
                 message = response.text
                 logger.error("<<< %d %s", response.status_code, message)

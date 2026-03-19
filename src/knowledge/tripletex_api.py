@@ -40,9 +40,16 @@ TRIPLETEX_API_REFERENCE = """
 - POST /v2/order - Create order. Required: customer(id), deliveryDate, orderLines(list of {product(id), count}). Optional: orderDate, receiver
 
 ### Invoice
-- GET /v2/invoice - List invoices. Params: customerId, fields, count, from
+- GET /v2/invoice - List invoices. Params: invoiceDateFrom, invoiceDateTo, fields, count, from. NOTE: use invoiceDateFrom/invoiceDateTo to filter, NOT customerId directly as a param.
+- GET /v2/invoice/{id} - Get single invoice by ID
 - POST /v2/invoice - Create invoice from order. Required: orderId, invoiceDate, sendMethod("EMAIL"|"MANUAL"|"EHF"|"EFAKTURA"|"AVTALEGIRO"|"VIPPS")
 - POST /v2/order/:invoiceMultipleOrders - Invoice multiple orders at once
+
+### Payment
+- GET /v2/payment - List payments. Params: fields, count, from
+- POST /v2/payment - Register a payment. Required: paymentDate, amount, typeId. See payment types.
+- POST /v2/invoice/{id}/:payment - Register payment for a specific invoice. Required: paymentDate, paymentTypeId, amount.
+- GET /v2/ledger/paymentType - List available payment types (use to get the correct paymentTypeId)
 
 ### Travel Expense
 - GET /v2/travelExpense - List travel expenses. Params: employeeId, fields, count, from
@@ -52,7 +59,7 @@ TRIPLETEX_API_REFERENCE = """
 
 ### Project
 - GET /v2/project - List projects. Params: name, fields, count, from
-- POST /v2/project - Create project. Required: name, projectManager(id), number. Optional: startDate, endDate, description
+- POST /v2/project - Create project. Required: name, projectManager(id), number, startDate (YYYY-MM-DD). Optional: endDate, description, customer(id)
 
 ### Department
 - GET /v2/department - List departments. Params: name, fields, count, from
