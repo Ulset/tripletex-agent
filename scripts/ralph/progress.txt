@@ -1,3 +1,46 @@
 # Ralph Progress Log
 Started: Thu Mar 19 18:44:20 CET 2026
 ---
+
+## Codebase Patterns
+- OpenAI is used via `from openai import OpenAI` with chat.completions.create()
+- Tests mock OpenAI at the class level with `@patch("src.agent.OpenAI")`
+- TripletexClient methods: get(endpoint, params), post(endpoint, json), put(endpoint, json), delete(endpoint)
+- TripletexAPIError(status_code, message) is raised on 4xx/5xx responses
+- Knowledge base is imported via `from src.knowledge import TRIPLETEX_API_REFERENCE`
+- Use `python3 -m pytest tests/ -v --ignore=tests/e2e` to run all non-e2e tests
+
+---
+
+## 2026-03-19 20:30 - US-001
+- Implemented TripletexAgent class in src/agent.py with ReAct-style agentic loop
+- Agent uses OpenAI tool calling with a single `call_api` tool (method, endpoint, body, params)
+- Loop iterates up to 15 times; ends when LLM responds with text (no tool call)
+- API errors caught and returned to LLM as tool results for self-healing
+- System prompt includes full TRIPLETEX_API_REFERENCE and instructions
+- Files changed: src/agent.py (new), tests/test_agent.py (new)
+- **Learnings for future iterations:**
+  - The branch was created from main which only had the initial commit — needed to merge ralph/tripletex-agent first
+  - Mock OpenAI responses need both `choice.finish_reason` and `choice.message.tool_calls` set correctly
+  - The CALL_API_TOOL schema uses `"type": ["object", "null"]` for optional body/params
+---
+
+## 2026-03-19 20:32 - US-002
+- System prompt was already implemented in US-001 — added 8 specific tests to verify all acceptance criteria
+- Tests verify: API reference inclusion, ALL data instruction, call_api instruction, text response completion, response shapes, efficiency guidelines, 7 language support, Norwegian character preservation
+- Files changed: tests/test_agent.py (added TestSystemPrompt class)
+- **Learnings for future iterations:**
+  - The system prompt and agent loop were tightly coupled in US-001 — US-002 was essentially just adding verification tests
+---
+
+## 2026-03-19 20:35 - US-003
+- Updated orchestrator to use TripletexAgent instead of PlanGenerator/PlanExecutor
+- Removed PlanGenerator and PlanExecutor imports from orchestrator
+- Rewrote test_orchestrator.py with 6 tests for agent-based flow
+- Tests verify: agent flow, exception handling, file processing, client creation, logging, no old imports
+- Files changed: src/orchestrator.py (rewritten), tests/test_orchestrator.py (rewritten)
+- **Learnings for future iterations:**
+  - Mock OpenAI at `src.agent.OpenAI` for agent-based tests (not `src.plan_generator.OpenAI`)
+  - Mock TripletexClient at `src.orchestrator.TripletexClient` to intercept API calls in orchestrator tests
+  - test_main.py tests still pass because they mock at the orchestrator level
+---

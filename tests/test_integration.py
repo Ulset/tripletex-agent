@@ -1,7 +1,7 @@
 """Integration tests simulating the full agent flow with mocked external services.
 
-US-014: Tests cover create employee, create customer, create invoice (multi-step),
-and error recovery with re-planning.
+Tests mock OpenAI to return tool_calls then a final text response,
+mock Tripletex API responses, and verify correct API calls are made.
 """
 
 import json
@@ -15,10 +15,6 @@ from src.models import SolveRequest, TripletexCredentials
 
 TRIPLETEX_BASE = "https://api.tripletex.io/v2"
 
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 def _settings():
     return Settings(
@@ -40,137 +36,65 @@ def _solve_request(prompt: str):
     )
 
 
-def _openai_response(steps):
-    """Build a MagicMock that looks like an OpenAI ChatCompletion response."""
-    resp = MagicMock()
-    resp.choices = [MagicMock()]
-    resp.choices[0].message.content = json.dumps({"steps": steps})
-    return resp
+def _make_text_response(content="Task complete"):
+    message = MagicMock()
+    message.content = content
+    message.tool_calls = None
+    choice = MagicMock()
+    choice.finish_reason = "stop"
+    choice.message = message
+    response = MagicMock()
+    response.choices = [choice]
+    return response
 
 
-# ---------------------------------------------------------------------------
-# Realistic mock plan fixtures
-# ---------------------------------------------------------------------------
+def _make_tool_call_response(method, endpoint, body=None, params=None, tool_call_id="call_1"):
+    args = {"method": method, "endpoint": endpoint}
+    if body is not None:
+        args["body"] = body
+    if params is not None:
+        args["params"] = params
 
-CREATE_EMPLOYEE_PLAN = [
-    {
-        "step_number": 1,
-        "action": "POST",
-        "endpoint": "/v2/employee",
-        "payload": {
-            "firstName": "Kari",
-            "lastName": "Nordmann",
-            "email": "kari.nordmann@example.no",
-        },
-        "params": None,
-        "description": "Create employee Kari Nordmann with email",
-    }
-]
+    tool_call = MagicMock()
+    tool_call.id = tool_call_id
+    tool_call.function.name = "call_api"
+    tool_call.function.arguments = json.dumps(args)
 
-CREATE_CUSTOMER_PLAN = [
-    {
-        "step_number": 1,
-        "action": "POST",
-        "endpoint": "/v2/customer",
-        "payload": {
-            "name": "Bergen Consulting AS",
-            "email": "post@bergenconsulting.no",
-        },
-        "params": None,
-        "description": "Create customer Bergen Consulting AS",
-    }
-]
+    message = MagicMock()
+    message.content = None
+    message.tool_calls = [tool_call]
+    choice = MagicMock()
+    choice.finish_reason = "tool_calls"
+    choice.message = message
+    response = MagicMock()
+    response.choices = [choice]
+    return response
 
-CREATE_INVOICE_PLAN = [
-    {
-        "step_number": 1,
-        "action": "POST",
-        "endpoint": "/v2/customer",
-        "payload": {"name": "Fjord Tech AS"},
-        "params": None,
-        "description": "Create customer Fjord Tech AS",
-    },
-    {
-        "step_number": 2,
-        "action": "POST",
-        "endpoint": "/v2/order",
-        "payload": {
-            "customer": {"id": "$step1.value.id"},
-            "orderDate": "2026-03-19",
-            "deliveryDate": "2026-04-19",
-        },
-        "params": None,
-        "description": "Create order linked to customer",
-    },
-    {
-        "step_number": 3,
-        "action": "POST",
-        "endpoint": "/v2/invoice",
-        "payload": {"orderId": "$step2.value.id", "invoiceDate": "2026-03-19"},
-        "params": None,
-        "description": "Create invoice from order",
-    },
-]
-
-# Plan used in the error-recovery scenario — missing required email field
-CREATE_EMPLOYEE_BAD_PLAN = [
-    {
-        "step_number": 1,
-        "action": "POST",
-        "endpoint": "/v2/employee",
-        "payload": {"firstName": "Kari"},
-        "params": None,
-        "description": "Create employee (missing lastName)",
-    }
-]
-
-# Corrected plan returned after re-plan
-CREATE_EMPLOYEE_FIXED_PLAN = [
-    {
-        "step_number": 1,
-        "action": "POST",
-        "endpoint": "/v2/employee",
-        "payload": {
-            "firstName": "Kari",
-            "lastName": "Nordmann",
-            "email": "kari.nordmann@example.no",
-        },
-        "params": None,
-        "description": "Create employee with all required fields",
-    }
-]
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 class TestIntegrationCreateEmployee:
-    """Full-flow: prompt -> plan -> POST /employee with correct fields."""
+    """Full-flow: prompt -> agent tool call -> POST /employee with correct fields."""
 
     @responses.activate
-    @patch("src.plan_generator.OpenAI")
+    @patch("src.agent.OpenAI")
     @patch("src.file_processor.OpenAI")
     def test_create_employee_calls_api_with_correct_fields(
-        self, mock_file_openai, mock_plan_openai
+        self, mock_file_openai, mock_agent_openai
     ):
         from src.orchestrator import TaskOrchestrator
 
-        mock_plan_openai.return_value.chat.completions.create.return_value = (
-            _openai_response(CREATE_EMPLOYEE_PLAN)
-        )
+        mock_openai = MagicMock()
+        mock_agent_openai.return_value = mock_openai
+        mock_openai.chat.completions.create.side_effect = [
+            _make_tool_call_response("POST", "/v2/employee", body={
+                "firstName": "Kari", "lastName": "Nordmann", "email": "kari.nordmann@example.no",
+            }),
+            _make_text_response("Created employee Kari Nordmann"),
+        ]
 
         responses.add(
             responses.POST,
             f"{TRIPLETEX_BASE}/employee",
-            json={
-                "value": {
-                    "id": 42,
-                    "firstName": "Kari",
-                    "lastName": "Nordmann",
-                    "email": "kari.nordmann@example.no",
-                }
-            },
+            json={"value": {"id": 42, "firstName": "Kari", "lastName": "Nordmann", "email": "kari.nordmann@example.no"}},
             status=201,
         )
 
@@ -179,11 +103,7 @@ class TestIntegrationCreateEmployee:
         )
 
         assert result.status == "completed"
-
-        # Exactly one API call made
         assert len(responses.calls) == 1
-        assert responses.calls[0].request.url == f"{TRIPLETEX_BASE}/employee"
-
         body = json.loads(responses.calls[0].request.body)
         assert body["firstName"] == "Kari"
         assert body["lastName"] == "Nordmann"
@@ -191,30 +111,29 @@ class TestIntegrationCreateEmployee:
 
 
 class TestIntegrationCreateCustomer:
-    """Full-flow: prompt -> plan -> POST /customer."""
+    """Full-flow: prompt -> agent tool call -> POST /customer."""
 
     @responses.activate
-    @patch("src.plan_generator.OpenAI")
+    @patch("src.agent.OpenAI")
     @patch("src.file_processor.OpenAI")
     def test_create_customer_calls_api_with_correct_fields(
-        self, mock_file_openai, mock_plan_openai
+        self, mock_file_openai, mock_agent_openai
     ):
         from src.orchestrator import TaskOrchestrator
 
-        mock_plan_openai.return_value.chat.completions.create.return_value = (
-            _openai_response(CREATE_CUSTOMER_PLAN)
-        )
+        mock_openai = MagicMock()
+        mock_agent_openai.return_value = mock_openai
+        mock_openai.chat.completions.create.side_effect = [
+            _make_tool_call_response("POST", "/v2/customer", body={
+                "name": "Bergen Consulting AS", "email": "post@bergenconsulting.no",
+            }),
+            _make_text_response("Created customer Bergen Consulting AS"),
+        ]
 
         responses.add(
             responses.POST,
             f"{TRIPLETEX_BASE}/customer",
-            json={
-                "value": {
-                    "id": 55,
-                    "name": "Bergen Consulting AS",
-                    "email": "post@bergenconsulting.no",
-                }
-            },
+            json={"value": {"id": 55, "name": "Bergen Consulting AS", "email": "post@bergenconsulting.no"}},
             status=201,
         )
 
@@ -224,165 +143,113 @@ class TestIntegrationCreateCustomer:
 
         assert result.status == "completed"
         assert len(responses.calls) == 1
-
         body = json.loads(responses.calls[0].request.body)
         assert body["name"] == "Bergen Consulting AS"
-        assert body["email"] == "post@bergenconsulting.no"
 
 
 class TestIntegrationCreateInvoice:
-    """Multi-step flow: POST /customer -> POST /order -> POST /invoice with ID linking."""
+    """Multi-step: POST /customer -> POST /order -> POST /invoice with agent reading IDs from responses."""
 
     @responses.activate
-    @patch("src.plan_generator.OpenAI")
+    @patch("src.agent.OpenAI")
     @patch("src.file_processor.OpenAI")
     def test_create_invoice_correct_call_order_and_id_linking(
-        self, mock_file_openai, mock_plan_openai
+        self, mock_file_openai, mock_agent_openai
     ):
         from src.orchestrator import TaskOrchestrator
 
-        mock_plan_openai.return_value.chat.completions.create.return_value = (
-            _openai_response(CREATE_INVOICE_PLAN)
-        )
+        mock_openai = MagicMock()
+        mock_agent_openai.return_value = mock_openai
+        mock_openai.chat.completions.create.side_effect = [
+            _make_tool_call_response("POST", "/v2/customer", body={"name": "Fjord Tech AS"}, tool_call_id="c1"),
+            _make_tool_call_response("POST", "/v2/order", body={
+                "customer": {"id": 100}, "orderDate": "2026-03-19", "deliveryDate": "2026-04-19",
+            }, tool_call_id="c2"),
+            _make_tool_call_response("POST", "/v2/invoice", body={
+                "orderId": 200, "invoiceDate": "2026-03-19",
+            }, tool_call_id="c3"),
+            _make_text_response("Created invoice for Fjord Tech AS"),
+        ]
 
-        # Step 1 — customer
-        responses.add(
-            responses.POST,
-            f"{TRIPLETEX_BASE}/customer",
-            json={"value": {"id": 100, "name": "Fjord Tech AS"}},
-            status=201,
-        )
-        # Step 2 — order
-        responses.add(
-            responses.POST,
-            f"{TRIPLETEX_BASE}/order",
-            json={
-                "value": {
-                    "id": 200,
-                    "customer": {"id": 100},
-                    "orderDate": "2026-03-19",
-                }
-            },
-            status=201,
-        )
-        # Step 3 — invoice
-        responses.add(
-            responses.POST,
-            f"{TRIPLETEX_BASE}/invoice",
-            json={"value": {"id": 300, "orderId": 200, "invoiceDate": "2026-03-19"}},
-            status=201,
-        )
+        responses.add(responses.POST, f"{TRIPLETEX_BASE}/customer",
+                       json={"value": {"id": 100, "name": "Fjord Tech AS"}}, status=201)
+        responses.add(responses.POST, f"{TRIPLETEX_BASE}/order",
+                       json={"value": {"id": 200, "customer": {"id": 100}}}, status=201)
+        responses.add(responses.POST, f"{TRIPLETEX_BASE}/invoice",
+                       json={"value": {"id": 300, "orderId": 200}}, status=201)
 
         result = TaskOrchestrator(_settings()).solve(
             _solve_request("Opprett faktura for Fjord Tech AS")
         )
 
         assert result.status == "completed"
-
-        # Verify call order: customer, order, invoice
         assert len(responses.calls) == 3
         assert "/v2/customer" in responses.calls[0].request.url
         assert "/v2/order" in responses.calls[1].request.url
         assert "/v2/invoice" in responses.calls[2].request.url
 
-        # Verify placeholder resolution: order.customer.id == 100 (from customer response)
+        # Agent reads customer ID from response and passes it to order
         order_body = json.loads(responses.calls[1].request.body)
         assert order_body["customer"]["id"] == 100
 
-        # Verify placeholder resolution: invoice.orderId == 200 (from order response)
         invoice_body = json.loads(responses.calls[2].request.body)
         assert invoice_body["orderId"] == 200
 
 
 class TestIntegrationErrorRecovery:
-    """Error recovery: first attempt fails with 422, replan produces corrected plan that succeeds."""
+    """Agent self-heals from API error by reading error message and retrying with correct fields."""
 
     @responses.activate
-    @patch("src.plan_generator.OpenAI")
+    @patch("src.agent.OpenAI")
     @patch("src.file_processor.OpenAI")
-    def test_error_recovery_replans_and_succeeds(
-        self, mock_file_openai, mock_plan_openai
+    def test_error_recovery_agent_retries_with_correct_fields(
+        self, mock_file_openai, mock_agent_openai
     ):
         from src.orchestrator import TaskOrchestrator
 
-        # First call -> bad plan, second call -> fixed plan
-        mock_openai_instance = mock_plan_openai.return_value
-        mock_openai_instance.chat.completions.create.side_effect = [
-            _openai_response(CREATE_EMPLOYEE_BAD_PLAN),  # generate_plan
-            _openai_response(CREATE_EMPLOYEE_FIXED_PLAN),  # replan
+        mock_openai = MagicMock()
+        mock_agent_openai.return_value = mock_openai
+
+        # First tool call fails (missing lastName), agent gets error, retries with correct fields
+        mock_openai.chat.completions.create.side_effect = [
+            _make_tool_call_response("POST", "/v2/employee", body={"firstName": "Kari"}, tool_call_id="c1"),
+            _make_tool_call_response("POST", "/v2/employee", body={
+                "firstName": "Kari", "lastName": "Nordmann", "email": "kari@example.no",
+            }, tool_call_id="c2"),
+            _make_text_response("Created employee Kari Nordmann"),
         ]
 
-        # First Tripletex call fails with 422
-        responses.add(
-            responses.POST,
-            f"{TRIPLETEX_BASE}/employee",
-            json={"message": "lastName is required"},
-            status=422,
-        )
-        # Second Tripletex call succeeds
-        responses.add(
-            responses.POST,
-            f"{TRIPLETEX_BASE}/employee",
-            json={
-                "value": {
-                    "id": 42,
-                    "firstName": "Kari",
-                    "lastName": "Nordmann",
-                    "email": "kari.nordmann@example.no",
-                }
-            },
-            status=201,
-        )
+        # First call fails
+        responses.add(responses.POST, f"{TRIPLETEX_BASE}/employee",
+                       json={"message": "lastName is required"}, status=422)
+        # Second call succeeds
+        responses.add(responses.POST, f"{TRIPLETEX_BASE}/employee",
+                       json={"value": {"id": 42, "firstName": "Kari", "lastName": "Nordmann"}}, status=201)
 
         result = TaskOrchestrator(_settings()).solve(
             _solve_request("Opprett ansatt Kari Nordmann")
         )
 
         assert result.status == "completed"
-
-        # Two Tripletex calls: first failed, second succeeded
         assert len(responses.calls) == 2
 
-        # Verify replan was called (second OpenAI call)
-        assert mock_openai_instance.chat.completions.create.call_count == 2
-
-        # Verify the second (successful) call had all required fields
+        # Second call has correct fields
         success_body = json.loads(responses.calls[1].request.body)
         assert success_body["firstName"] == "Kari"
         assert success_body["lastName"] == "Nordmann"
-        assert success_body["email"] == "kari.nordmann@example.no"
 
-    @responses.activate
-    @patch("src.plan_generator.OpenAI")
+    @patch("src.agent.OpenAI")
     @patch("src.file_processor.OpenAI")
-    def test_error_recovery_still_returns_completed_after_exhausted_retries(
-        self, mock_file_openai, mock_plan_openai
+    def test_error_recovery_still_returns_completed(
+        self, mock_file_openai, mock_agent_openai
     ):
-        """Even when all replan attempts fail, status is 'completed'."""
+        """Even when agent fails entirely, status is 'completed'."""
         from src.orchestrator import TaskOrchestrator
 
-        bad_plan = _openai_response(CREATE_EMPLOYEE_BAD_PLAN)
-        # generate_plan + 2 replans = 3 calls, all return the same bad plan
-        mock_plan_openai.return_value.chat.completions.create.side_effect = [
-            bad_plan,
-            bad_plan,
-            bad_plan,
-        ]
-
-        # All three Tripletex calls fail
-        for _ in range(3):
-            responses.add(
-                responses.POST,
-                f"{TRIPLETEX_BASE}/employee",
-                json={"message": "lastName is required"},
-                status=422,
-            )
+        mock_agent_openai.return_value.chat.completions.create.side_effect = Exception("LLM timeout")
 
         result = TaskOrchestrator(_settings()).solve(
             _solve_request("Opprett ansatt Kari Nordmann")
         )
 
-        # Must still return completed per competition rules
         assert result.status == "completed"
-        # 3 Tripletex calls: initial + 2 replan attempts
-        assert len(responses.calls) == 3

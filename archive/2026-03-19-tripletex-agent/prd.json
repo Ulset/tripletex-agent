@@ -1,0 +1,269 @@
+{
+  "project": "Tripletex AI Agent",
+  "branchName": "ralph/tripletex-agent",
+  "description": "Autonomous AI agent for the NM i AI competition that interprets natural language accounting prompts and executes Tripletex API calls via an OpenAI LLM",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project scaffolding and configuration",
+      "description": "As a developer, I need the Python project structure with dependency management and environment configuration so that I can start building the agent.",
+      "acceptanceCriteria": [
+        "pyproject.toml with dependencies: fastapi, uvicorn, requests, openai, python-dotenv, pymupdf, pydantic, pytest, pytest-asyncio, responses, pytest-cov",
+        ".env.example with OPENAI_API_KEY, OPENAI_MODEL (default gpt-4o), PORT (default 8000), API_KEY (optional)",
+        ".gitignore includes .env, __pycache__, .pytest_cache, *.pyc, .venv",
+        "src/__init__.py, src/config.py, src/main.py exist",
+        "config.py loads env vars with python-dotenv and exposes a Settings dataclass with openai_api_key, openai_model, port, api_key fields",
+        "main.py creates a FastAPI app with a placeholder root route returning {\"status\": \"ok\"}",
+        "App starts with: python -m src.main (uvicorn on configured port)",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Pydantic models and /solve endpoint skeleton",
+      "description": "As the competition platform, I need a POST /solve endpoint that accepts the competition request format and returns {\"status\": \"completed\"} so that the agent can receive tasks.",
+      "acceptanceCriteria": [
+        "src/models.py with Pydantic models: FileAttachment (filename, content_base64, mime_type), TripletexCredentials (base_url, session_token), SolveRequest (prompt, files: list[FileAttachment], tripletex_credentials: TripletexCredentials), SolveResponse (status: str)",
+        "POST /solve endpoint in main.py accepts SolveRequest body",
+        "If API_KEY is set in config, endpoint validates Authorization: Bearer header and returns 401 if invalid",
+        "Endpoint currently returns {\"status\": \"completed\"} as placeholder",
+        "Endpoint catches exceptions and returns HTTP 500 with error detail",
+        "Unit tests: valid request returns 200, invalid body returns 422, wrong API key returns 401",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Tripletex API client",
+      "description": "As the agent, I need an HTTP client to interact with the Tripletex API through the provided proxy URL so I can CRUD entities.",
+      "acceptanceCriteria": [
+        "src/tripletex_client.py with TripletexClient class taking base_url and session_token",
+        "Uses requests library with Basic Auth (username '0', password = session_token)",
+        "Methods: get(endpoint, params=None), post(endpoint, json=None), put(endpoint, json=None), delete(endpoint)",
+        "get() supports fields, count, and from_ parameters for pagination and field selection",
+        "All methods return parsed JSON (resp.json())",
+        "Logs every API call: method, endpoint, status_code using Python logging",
+        "Raises TripletexAPIError(status_code, message) for 4xx/5xx responses, parsing error detail from response body",
+        "Unit tests using responses library: test successful GET/POST/PUT/DELETE, test 4xx raises TripletexAPIError, test pagination params are sent correctly",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "File processing pipeline",
+      "description": "As the agent, I need to extract text and data from PDF and image attachments so I can include their content when interpreting tasks.",
+      "acceptanceCriteria": [
+        "src/file_processor.py with FileProcessor class",
+        "process_files(files: list[FileAttachment], openai_api_key: str, openai_model: str) -> list[dict] returning [{filename, extracted_text}]",
+        "Decodes base64 content from FileAttachment",
+        "For PDFs: uses pymupdf (fitz) to extract text from all pages",
+        "For PDFs with no extractable text (scanned): falls back to OpenAI vision API by rendering pages as images",
+        "For image files (PNG, JPG, JPEG): sends to OpenAI vision API with prompt 'Extract all text and data from this image'",
+        "Returns empty list when files list is empty",
+        "Unit tests: test base64 decoding, test empty files list, test PDF text extraction with a simple test PDF fixture",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Tripletex API knowledge base",
+      "description": "As the LLM, I need a comprehensive reference of Tripletex API endpoints and patterns so I generate correct execution plans on the first attempt.",
+      "acceptanceCriteria": [
+        "src/knowledge/__init__.py and src/knowledge/tripletex_api.py exist",
+        "tripletex_api.py exports TRIPLETEX_API_REFERENCE as a string constant",
+        "Documents these endpoints with method, path, required fields, optional fields, and example payload: /employee (GET, POST, PUT), /customer (GET, POST, PUT), /product (GET, POST), /invoice (GET, POST), /order (GET, POST), /travelExpense (GET, POST, PUT, DELETE), /project (GET, POST), /department (GET, POST), /ledger/account (GET), /ledger/voucher (GET, POST, DELETE)",
+        "Documents common task patterns: create single entity, create with linking (customer->order->invoice), modify existing, delete/reverse, enable modules, multi-step (payment registration)",
+        "Documents module enablement patterns (e.g., enabling department accounting before creating departments)",
+        "Documents common errors: missing prerequisites, duplicate entities, required field omissions, Norwegian character handling (æ, ø, å)",
+        "Documents that sandbox starts empty — agent must create all prerequisites from scratch",
+        "Documents authentication (Basic Auth, username 0), field selection (?fields=), pagination (?count=&from=), date format (YYYY-MM-DD), response wrapper ({fullResultSize, values})",
+        "String fits within ~4000 tokens (suitable for inclusion in LLM system prompt)",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "LLM plan generation",
+      "description": "As the agent, I need to use an OpenAI LLM to interpret the task prompt and generate a structured execution plan of Tripletex API calls.",
+      "acceptanceCriteria": [
+        "src/plan_generator.py with PlanGenerator class taking openai_api_key and model name",
+        "Pydantic models in src/models.py: PlanStep (step_number, action: GET/POST/PUT/DELETE, endpoint, payload: dict|None, params: dict|None, description), ExecutionPlan (steps: list[PlanStep])",
+        "generate_plan(prompt, file_contents: list[dict]|None, error_context: str|None) -> ExecutionPlan",
+        "System prompt includes the TRIPLETEX_API_REFERENCE, instructions to output valid JSON matching ExecutionPlan schema, and efficiency guidelines (minimize calls, reuse IDs from responses, avoid unnecessary GETs)",
+        "System prompt instructs the model to handle prompts in any of 7 languages: nb, nn, en, es, pt, de, fr",
+        "Uses placeholder syntax $stepN.path.to.value for referencing results from previous steps (e.g., $step1.value.id)",
+        "Parses LLM JSON response into ExecutionPlan pydantic model",
+        "Unit tests with mocked OpenAI response: test valid plan is parsed, test plan with placeholders",
+        "Tests pass"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Plan execution engine",
+      "description": "As the agent, I need to execute the generated plan step-by-step against the Tripletex API, resolving inter-step dependencies.",
+      "acceptanceCriteria": [
+        "src/plan_executor.py with PlanExecutor class taking a TripletexClient",
+        "execute(plan: ExecutionPlan) -> ExecutionResult where ExecutionResult has steps_completed: int, results: list[dict], errors: list[str], success: bool",
+        "Executes steps in order using the TripletexClient methods based on step.action",
+        "Resolves $stepN.path.to.value placeholders in payloads and params by traversing previous step results using dot-notation",
+        "Stores each step result in a context dict keyed by step_number",
+        "On step failure (TripletexAPIError): records error message, stops execution, returns partial results with success=False",
+        "Unit tests with mocked TripletexClient: test sequential execution, test placeholder resolution (e.g., $step1.value.id resolves to 42), test failure stops execution",
+        "Tests pass"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Re-planning on failure",
+      "description": "As the agent, I need to recover from API errors by asking the LLM for a corrected plan so that transient issues don't cause task failure.",
+      "acceptanceCriteria": [
+        "Add replan method to PlanGenerator: replan(original_prompt, file_contents, execution_result: ExecutionResult, error_context: str) -> ExecutionPlan",
+        "replan sends the original prompt, what was accomplished so far (successful steps + their results), and the error details to the LLM",
+        "LLM generates a corrected plan for remaining work only (not re-doing successful steps)",
+        "Add re-planning loop logic: on execution failure, call replan and re-execute, max 2 re-plan attempts",
+        "If all retries exhausted, return final partial ExecutionResult",
+        "Unit tests: test replan generates corrected plan, test max 2 retries enforced",
+        "Tests pass"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Orchestrator wiring everything together",
+      "description": "As the /solve endpoint, I need an orchestrator that coordinates file processing, plan generation, execution, and re-planning into a single workflow.",
+      "acceptanceCriteria": [
+        "src/orchestrator.py with TaskOrchestrator class taking config Settings",
+        "solve(request: SolveRequest) -> SolveResponse method that: 1) processes files via FileProcessor, 2) generates plan via PlanGenerator, 3) executes plan via PlanExecutor, 4) re-plans on failure (up to 2 retries), 5) returns SolveResponse(status='completed')",
+        "Creates TripletexClient from request credentials",
+        "Logs the full workflow: prompt received, files processed, plan generated (step count), execution result (steps completed, errors), total duration",
+        "Catches all exceptions and still returns {status: completed} (competition requires this)",
+        "Update /solve endpoint in main.py to use TaskOrchestrator",
+        "Integration test with mocked OpenAI and mocked Tripletex: full flow from request to response",
+        "Tests pass"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Multi-language prompt test coverage",
+      "description": "As a developer, I need to verify the agent handles prompts in all 7 supported languages correctly.",
+      "acceptanceCriteria": [
+        "tests/fixtures/sample_prompts.py with sample 'create employee' prompts in: Norwegian Bokmal, Norwegian Nynorsk, English, Spanish, Portuguese, German, French",
+        "Each prompt includes a name with special characters (ae, oe, aa, n-tilde, etc.)",
+        "Unit tests verify PlanGenerator produces valid plans for prompts in at least nb, en, and es (using mocked OpenAI)",
+        "Test verifies special characters are preserved in generated plan payloads",
+        "Tests pass"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Health check endpoint and structured logging",
+      "description": "As an operator, I need a health check endpoint and structured JSON logging so I can monitor the deployed agent.",
+      "acceptanceCriteria": [
+        "GET /health returns {\"status\": \"ok\"} with HTTP 200",
+        "src/logging_config.py sets up structured JSON logging with fields: timestamp, level, message, extra context",
+        "Logging is initialized in main.py on startup",
+        "All existing log calls in tripletex_client, orchestrator use the structured logger",
+        "Session tokens and API keys are never logged (redacted or excluded)",
+        "Unit test: GET /health returns 200",
+        "Tests pass"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Efficiency optimization in plan generation",
+      "description": "As a competitor, I need the agent to minimize API calls and avoid 4xx errors to earn the efficiency bonus on perfect tasks.",
+      "acceptanceCriteria": [
+        "System prompt in PlanGenerator explicitly instructs: reuse IDs from POST responses (don't re-fetch), never call GET for entities you just created, batch requests where Tripletex supports it, validate required fields before calling",
+        "PlanExecutor logs total API call count and error count after execution",
+        "Orchestrator logs efficiency summary: total_api_calls, error_count, replan_count per /solve request",
+        "Add efficiency tracking fields to ExecutionResult: total_api_calls: int, error_count: int",
+        "Tests pass"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Dockerfile and Docker Compose",
+      "description": "As a developer, I need a Docker setup so I can build, test, and deploy the agent as a container to GCP.",
+      "acceptanceCriteria": [
+        "Dockerfile: Python 3.12-slim base, copies pyproject.toml and installs deps first (layer caching), copies src/, exposes PORT, runs uvicorn with --host 0.0.0.0",
+        "docker-compose.yml: builds from Dockerfile, mounts .env, maps port 8000:8000",
+        "docker build succeeds without errors",
+        "docker-compose up starts the app and GET /health returns 200",
+        "Tests pass"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Integration tests with mocked APIs",
+      "description": "As a developer, I need integration tests simulating the full agent flow with mocked external services so I can verify correctness without hitting real APIs.",
+      "acceptanceCriteria": [
+        "tests/test_integration.py with full-flow integration tests",
+        "Mock fixtures for OpenAI API returning realistic ExecutionPlan JSON for: create employee, create customer, create invoice (multi-step)",
+        "Mock fixtures for Tripletex API responses matching each plan's expected calls",
+        "Test 'create employee': verifies POST /employee is called with correct name/email fields",
+        "Test 'create invoice': verifies correct order of calls (POST /customer -> POST /order -> POST /invoice) with ID linking",
+        "Test 'error recovery': mocks a 422 on first attempt, verifies replan is called and second attempt succeeds",
+        "All mocks use responses library",
+        "Tests pass"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "End-to-end test setup with Tripletex sandbox",
+      "description": "As a developer, I need e2e tests against the real Tripletex sandbox API to validate the agent works against the actual API.",
+      "acceptanceCriteria": [
+        "tests/e2e/conftest.py loads sandbox credentials from TRIPLETEX_BASE_URL and TRIPLETEX_SESSION_TOKEN env vars (or .env.test)",
+        "pytest marker @pytest.mark.e2e so e2e tests run separately with: pytest -m e2e",
+        "tests/e2e/test_create_employee.py: creates an employee via TripletexClient, verifies via GET that employee exists with correct fields",
+        "tests/e2e/test_create_customer.py: creates a customer, verifies via GET",
+        "tests/e2e/test_full_flow.py: sends a full SolveRequest to the orchestrator with a real prompt and sandbox credentials (requires OPENAI_API_KEY), verifies entity was created",
+        "README section documenting how to configure and run e2e tests",
+        "Tests pass (unit tests; e2e tests pass when sandbox credentials are provided)"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": ""
+    }
+  ]
+}
