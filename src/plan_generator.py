@@ -18,6 +18,14 @@ Respond ONLY with a valid JSON object matching this schema:
   "steps": [
     {{
       "step_number": 1,
+      "action": "GET",
+      "endpoint": "/v2/customer",
+      "payload": null,
+      "params": {{"name": "Acme", "fields": "id,name"}},
+      "description": "Look up the customer"
+    }},
+    {{
+      "step_number": 2,
       "action": "POST",
       "endpoint": "/v2/employee",
       "payload": {{"firstName": "Ola", "lastName": "Nordmann"}},
@@ -26,6 +34,8 @@ Respond ONLY with a valid JSON object matching this schema:
     }}
   ]
 }}
+
+IMPORTANT: "params" must be a JSON object (dict) or null, NEVER a query string. Use {{"name": "value"}} not "name=value&fields=id".
 
 ## Placeholder Syntax
 Use $stepN.path.to.value to reference results from previous steps.

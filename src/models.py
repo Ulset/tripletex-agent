@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+from urllib.parse import parse_qs
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FileAttachment(BaseModel):
@@ -33,6 +35,15 @@ class PlanStep(BaseModel):
     payload: dict | None = None
     params: dict | None = None
     description: str
+
+    @field_validator("params", mode="before")
+    @classmethod
+    def coerce_params(cls, v):
+        if isinstance(v, str):
+            # Parse query string like "name=Mineral Water&fields=id" into dict
+            parsed = parse_qs(v, keep_blank_values=True)
+            return {k: vals[0] if len(vals) == 1 else vals for k, vals in parsed.items()}
+        return v
 
 
 class ExecutionPlan(BaseModel):
