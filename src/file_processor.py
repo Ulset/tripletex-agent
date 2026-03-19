@@ -1,5 +1,4 @@
 import base64
-import io
 import logging
 
 import fitz  # pymupdf
@@ -24,15 +23,23 @@ class FileProcessor:
 
         results = []
         for file in files:
-            raw = base64.b64decode(file.content_base64)
-            extracted = ""
+            try:
+                raw = base64.b64decode(file.content_base64)
+            except Exception:
+                logger.error("Failed to decode base64 for file %s", file.filename)
+                results.append({"filename": file.filename, "extracted_text": ""})
+                continue
 
-            if file.mime_type == "application/pdf":
-                extracted = self._extract_pdf_text(raw, file, openai_api_key, openai_model)
-            elif file.mime_type in IMAGE_MIME_TYPES:
-                extracted = self._extract_image_text(file.content_base64, file.mime_type, openai_api_key, openai_model)
-            else:
-                logger.warning("Unsupported mime type %s for file %s", file.mime_type, file.filename)
+            extracted = ""
+            try:
+                if file.mime_type == "application/pdf":
+                    extracted = self._extract_pdf_text(raw, file, openai_api_key, openai_model)
+                elif file.mime_type in IMAGE_MIME_TYPES:
+                    extracted = self._extract_image_text(file.content_base64, file.mime_type, openai_api_key, openai_model)
+                else:
+                    logger.warning("Unsupported mime type %s for file %s", file.mime_type, file.filename)
+            except Exception:
+                logger.exception("Failed to process file %s", file.filename)
 
             results.append({"filename": file.filename, "extracted_text": extracted})
 

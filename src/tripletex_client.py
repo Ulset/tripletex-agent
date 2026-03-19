@@ -20,7 +20,7 @@ class TripletexClient:
 
     def _request(self, method: str, endpoint: str, **kwargs) -> dict:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        response = requests.request(method, url, auth=self.auth, **kwargs)
+        response = requests.request(method, url, auth=self.auth, timeout=30, **kwargs)
         logger.info("%s %s -> %d", method, endpoint, response.status_code)
 
         if response.status_code >= 400:
@@ -31,6 +31,8 @@ class TripletexClient:
                 message = response.text
             raise TripletexAPIError(response.status_code, message)
 
+        if response.status_code == 204 or not response.content:
+            return {}
         return response.json()
 
     def get(self, endpoint: str, params: dict | None = None, fields: str | None = None,

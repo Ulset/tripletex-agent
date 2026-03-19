@@ -73,3 +73,17 @@ class TestSolveEndpoint:
         response = client.post("/solve", json=body)
         assert response.status_code == 200
         assert response.json() == {"status": "completed"}
+
+    def test_alternative_field_names_task_prompt(self):
+        """Competition may send task_prompt instead of prompt."""
+        body = {
+            "task_prompt": "Create an employee named Ola Nordmann",
+            "attachments": [],
+            "tripletex_credentials": {
+                "base_url": "https://api.tripletex.io/v2",
+                "session_token": "test-token-123",
+            },
+        }
+        response = client.post("/solve", json=body)
+        assert response.status_code == 200
+        assert response.json() == {"status": "completed"}

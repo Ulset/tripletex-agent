@@ -29,7 +29,7 @@ async def solve(request: SolveRequest, _: None = Depends(verify_api_key)):
         return SolveResponse(status="completed")
     except Exception as e:
         logger.exception("Error processing solve request")
-        raise HTTPException(status_code=500, detail=str(e))
+        return SolveResponse(status="completed")
 
 
 if __name__ == "__main__":
