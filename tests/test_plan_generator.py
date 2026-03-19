@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.models import ExecutionPlan, PlanStep
+from src.models import ExecutionPlan, ExecutionResult, PlanStep
 from src.plan_generator import PlanGenerator
 
 
@@ -209,3 +209,85 @@ class TestPlanGenerator:
 
         call_args = mock_client.chat.completions.create.call_args
         assert call_args[1]["response_format"] == {"type": "json_object"}
+
+
+@patch("src.plan_generator.OpenAI")
+class TestReplan:
+    def test_replan_generates_corrected_plan(self, mock_openai_cls):
+        corrected_plan = {
+            "steps": [
+                {
+                    "step_number": 1,
+                    "action": "POST",
+                    "endpoint": "/v2/company/modules",
+                    "payload": {"departmentAccounting": True},
+                    "params": None,
+                    "description": "Enable department module",
+                },
+                {
+                    "step_number": 2,
+                    "action": "POST",
+                    "endpoint": "/v2/department",
+                    "payload": {"name": "Salg", "departmentNumber": 1},
+                    "params": None,
+                    "description": "Create department",
+                },
+            ]
+        }
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _make_openai_response(
+            corrected_plan
+        )
+
+        generator = PlanGenerator(openai_api_key="test-key")
+        execution_result = ExecutionResult(
+            steps_completed=1,
+            results=[{"value": {"id": 10}}],
+            errors=["Step 2 failed: 403: Department accounting not enabled"],
+            success=False,
+        )
+
+        plan = generator.replan(
+            original_prompt="Opprett avdeling Salg",
+            file_contents=None,
+            execution_result=execution_result,
+            error_context="403: Department accounting not enabled",
+        )
+
+        assert isinstance(plan, ExecutionPlan)
+        assert len(plan.steps) == 2
+
+        call_args = mock_client.chat.completions.create.call_args
+        user_msg = call_args[1]["messages"][1]["content"]
+        assert "Opprett avdeling Salg" in user_msg
+        assert "1 steps succeeded" in user_msg
+        assert "403" in user_msg
+        assert "REMAINING work only" in user_msg
+
+    def test_replan_includes_file_contents(self, mock_openai_cls):
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        mock_client.chat.completions.create.return_value = _make_openai_response(
+            {"steps": []}
+        )
+
+        generator = PlanGenerator(openai_api_key="test-key")
+        execution_result = ExecutionResult(
+            steps_completed=0,
+            results=[],
+            errors=["Step 1 failed: 422 validation error"],
+            success=False,
+        )
+
+        generator.replan(
+            original_prompt="Create employee from file",
+            file_contents=[{"filename": "data.pdf", "extracted_text": "John Doe"}],
+            execution_result=execution_result,
+            error_context="422 validation error",
+        )
+
+        call_args = mock_client.chat.completions.create.call_args
+        user_msg = call_args[1]["messages"][1]["content"]
+        assert "data.pdf" in user_msg
+        assert "John Doe" in user_msg

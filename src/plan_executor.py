@@ -2,6 +2,7 @@ import logging
 import re
 
 from src.models import ExecutionPlan, ExecutionResult
+from src.plan_generator import PlanGenerator
 from src.tripletex_client import TripletexAPIError, TripletexClient
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,33 @@ class PlanExecutor:
             errors=errors,
             success=True,
         )
+
+    def execute_with_replan(
+        self,
+        plan: ExecutionPlan,
+        generator: PlanGenerator,
+        original_prompt: str,
+        file_contents: list[dict] | None = None,
+        max_replans: int = 2,
+    ) -> ExecutionResult:
+        """Execute a plan with automatic re-planning on failure."""
+        result = self.execute(plan)
+        replans = 0
+
+        while not result.success and replans < max_replans:
+            replans += 1
+            error_context = "\n".join(result.errors)
+            logger.info("Re-plan attempt %d/%d", replans, max_replans)
+
+            new_plan = generator.replan(
+                original_prompt=original_prompt,
+                file_contents=file_contents,
+                execution_result=result,
+                error_context=error_context,
+            )
+            result = self.execute(new_plan)
+
+        return result
 
 
 def _resolve_placeholders(obj, context: dict[int, dict]):

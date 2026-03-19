@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.models import ExecutionPlan, PlanStep
+from src.models import ExecutionPlan, ExecutionResult, PlanStep
 from src.plan_executor import PlanExecutor, _resolve_placeholders, _traverse
 from src.tripletex_client import TripletexAPIError
 
@@ -143,6 +143,84 @@ class TestFailureHandling:
         assert len(result.errors) == 1
         # Step 3 should not have been called
         assert mock_client.post.call_count == 2
+
+
+class TestExecuteWithReplan:
+    def test_replan_on_failure_then_succeed(self, executor, mock_client):
+        """Test that execute_with_replan calls replan on failure and succeeds on retry."""
+        # First execution fails on step 2
+        mock_client.post.side_effect = [
+            {"value": {"id": 1}},
+            TripletexAPIError(422, "Missing field"),
+        ]
+        initial_plan = ExecutionPlan(steps=[
+            PlanStep(step_number=1, action="POST", endpoint="/v2/customer", payload={"name": "Acme"}, description="Create customer"),
+            PlanStep(step_number=2, action="POST", endpoint="/v2/order", payload={"customerId": "$step1.value.id"}, description="Create order"),
+        ])
+
+        corrected_plan = ExecutionPlan(steps=[
+            PlanStep(step_number=1, action="POST", endpoint="/v2/order", payload={"customer": {"id": 1}, "deliveryDate": "2024-01-01"}, description="Create order with fix"),
+        ])
+
+        mock_generator = MagicMock()
+        mock_generator.replan.return_value = corrected_plan
+
+        # Second execution succeeds
+        mock_client.post.side_effect = [
+            {"value": {"id": 1}},
+            TripletexAPIError(422, "Missing field"),
+            {"value": {"id": 50}},
+        ]
+
+        result = executor.execute_with_replan(
+            plan=initial_plan,
+            generator=mock_generator,
+            original_prompt="Create order for Acme",
+        )
+
+        assert result.success is True
+        assert mock_generator.replan.call_count == 1
+
+    def test_max_replans_enforced(self, executor, mock_client):
+        """Test that re-planning stops after max_replans attempts."""
+        mock_client.post.side_effect = TripletexAPIError(500, "Server error")
+        plan = ExecutionPlan(steps=[
+            PlanStep(step_number=1, action="POST", endpoint="/v2/employee", payload={"firstName": "Ola"}, description="Create employee"),
+        ])
+        failing_plan = ExecutionPlan(steps=[
+            PlanStep(step_number=1, action="POST", endpoint="/v2/employee", payload={"firstName": "Ola"}, description="Retry create employee"),
+        ])
+
+        mock_generator = MagicMock()
+        mock_generator.replan.return_value = failing_plan
+
+        result = executor.execute_with_replan(
+            plan=plan,
+            generator=mock_generator,
+            original_prompt="Create employee Ola",
+            max_replans=2,
+        )
+
+        assert result.success is False
+        assert mock_generator.replan.call_count == 2
+
+    def test_no_replan_on_success(self, executor, mock_client):
+        """Test that replan is not called when execution succeeds."""
+        mock_client.post.return_value = {"value": {"id": 1}}
+        plan = ExecutionPlan(steps=[
+            PlanStep(step_number=1, action="POST", endpoint="/v2/employee", payload={"firstName": "Ola"}, description="Create employee"),
+        ])
+
+        mock_generator = MagicMock()
+
+        result = executor.execute_with_replan(
+            plan=plan,
+            generator=mock_generator,
+            original_prompt="Create employee",
+        )
+
+        assert result.success is True
+        mock_generator.replan.assert_not_called()
 
 
 class TestHelpers:
