@@ -4,6 +4,7 @@ import time
 
 from openai import OpenAI
 
+from src.api_docs import search_api_docs
 from src.knowledge import TRIPLETEX_API_REFERENCE
 from src.tripletex_client import TripletexAPIError, TripletexClient
 
@@ -18,6 +19,7 @@ SYSTEM_PROMPT = f"""You are a Tripletex API agent. You receive a task descriptio
 ## How to Work
 
 - Use the call_api tool to make API calls to Tripletex.
+- Use the search_api_docs tool to look up endpoint details, required fields, and parameter names if you are unsure. This searches the official Tripletex OpenAPI specification.
 - You see each API response before deciding the next action. Use actual data from responses — never guess IDs or field values.
 - When the task is fully complete, respond with a short text message (NO tool call) confirming what you did.
 
@@ -82,6 +84,25 @@ CALL_API_TOOL = {
 }
 
 
+SEARCH_API_DOCS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "search_api_docs",
+        "description": "Search the official Tripletex OpenAPI specification for endpoint details, required fields, parameters, and schemas. Use this when you need to discover the correct endpoint, field names, or required parameters for an API call.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term — e.g. 'invoice', 'payment', 'employee', 'vatType', 'project'",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
 class TripletexAgent:
     def __init__(
         self,
@@ -120,7 +141,7 @@ class TripletexAgent:
             response = self.openai.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=[CALL_API_TOOL],
+                tools=[CALL_API_TOOL, SEARCH_API_DOCS_TOOL],
                 temperature=0,
             )
 
@@ -141,16 +162,29 @@ class TripletexAgent:
             messages.append(choice.message)
 
             for tool_call in choice.message.tool_calls:
-                if tool_call.function.name != "call_api":
-                    # Unknown tool — skip
+                func_name = tool_call.function.name
+                args = json.loads(tool_call.function.arguments)
+
+                if func_name == "search_api_docs":
+                    query = args.get("query", "")
+                    logger.info("Docs search: %s", query)
+                    result_str = search_api_docs(query)
+                    logger.info("Docs result: %s", _truncate(result_str))
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": json.dumps({"error": f"Unknown tool: {tool_call.function.name}"}),
+                        "content": result_str,
                     })
                     continue
 
-                args = json.loads(tool_call.function.arguments)
+                if func_name != "call_api":
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps({"error": f"Unknown tool: {func_name}"}),
+                    })
+                    continue
+
                 method = args["method"]
                 endpoint = args["endpoint"]
                 body = args.get("body")
