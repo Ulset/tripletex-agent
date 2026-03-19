@@ -1,0 +1,171 @@
+## Codebase Patterns
+- PlanExecutor resolves `$stepN.path.to.value` placeholders via `_resolve_placeholders()` — works recursively on dicts, lists, and strings
+- `_traverse()` supports dot-notation traversal into nested dicts and lists (list indices as integers)
+- Use `.venv/bin/pytest` to run tests (python -m pytest may fail due to path issues)
+- Python 3.12 required - use `python3.12 -m venv .venv` to create virtualenv
+- Config uses dataclass with `field(default_factory=lambda: os.getenv(...))` pattern
+- FastAPI app in src/main.py, config in src/config.py
+- Dev dependencies installed via `pip install -e ".[dev]"`
+- TripletexClient uses Basic Auth with username "0" and session_token as password
+- Use `responses` library to mock HTTP calls in TripletexClient tests
+- `responses.calls[0].request.body` returns bytes, not str — use `b"..."` for assertions
+- FileProcessor uses pymupdf (fitz) for PDF text extraction, OpenAI vision API as fallback for scanned PDFs/images
+- Mock OpenAI with `unittest.mock.patch("src.file_processor.OpenAI")` at class level
+- Mock OpenAI in plan_generator with `@patch("src.plan_generator.OpenAI")` — construct MagicMock return chain for chat.completions.create
+- TaskOrchestrator in orchestrator.py: mock at `@patch("src.main.TaskOrchestrator")` for endpoint tests; for orchestrator tests, mock both `src.plan_generator.OpenAI` and `src.file_processor.OpenAI` plus use `responses` for Tripletex
+- Structured JSON logging via `src/logging_config.py` — `setup_logging()` configures root logger with JSONFormatter and SensitiveFilter
+- SensitiveFilter redacts values matching session_token, api_key, password, secret, authorization, bearer patterns in log messages and args
+- ExecutionResult tracks `total_api_calls` and `error_count`; PlanExecutor accumulates these across replans via `execute_with_replan`
+- PlanExecutor.replan_count is set during `execute_with_replan` — read by orchestrator for efficiency logging
+- E2E tests in `tests/e2e/` — run with `.venv/bin/pytest -m e2e`, require TRIPLETEX_BASE_URL + TRIPLETEX_SESSION_TOKEN env vars (or .env.test)
+- E2E conftest provides `tripletex_client`, `sandbox_credentials`, and `openai_api_key` fixtures with auto-skip on missing credentials
+---
+
+## 2026-03-19 18:58 - US-001
+- What was implemented: Project scaffolding - pyproject.toml, .env.example, .gitignore, src/config.py (Settings dataclass), src/main.py (FastAPI root route), tests
+- Files changed: pyproject.toml, .env.example, .gitignore, src/__init__.py, src/config.py, src/main.py, tests/__init__.py, tests/test_config.py, tests/test_main.py
+- **Learnings for future iterations:**
+  - System Python is 3.11.7 but project requires 3.12 - use python3.12 explicitly
+  - Use `.venv/bin/pytest` directly instead of `python -m pytest`
+  - `pip install -e ".[dev]"` installs both runtime and test deps
+---
+
+## 2026-03-19 19:02 - US-002
+- What was implemented: Pydantic models (FileAttachment, TripletexCredentials, SolveRequest, SolveResponse) in src/models.py, POST /solve endpoint with Bearer auth in main.py, 6 new tests
+- Files changed: src/models.py (new), src/main.py (updated), tests/test_main.py (updated)
+- **Learnings for future iterations:**
+  - FastAPI dependency injection with `Depends()` works well for auth — use `verify_api_key` pattern for optional auth
+  - Use `unittest.mock.patch("src.main.settings")` to mock settings in endpoint tests
+  - Keep Pydantic models in a separate `models.py` to avoid circular imports later
+---
+
+## 2026-03-19 19:10 - US-003
+- What was implemented: TripletexClient class in src/tripletex_client.py with GET/POST/PUT/DELETE methods, Basic Auth, pagination/field selection support, TripletexAPIError exception, logging. 11 unit tests using responses library.
+- Files changed: src/tripletex_client.py (new), tests/test_tripletex_client.py (new)
+- **Learnings for future iterations:**
+  - `responses` library request body is bytes — use `b"..."` for string-in-body assertions
+  - TripletexClient._request() is a good internal method for DRY HTTP handling
+  - Error parsing should try JSON first, fall back to response.text for non-JSON error bodies
+---
+
+## 2026-03-19 19:03 - US-004
+- What was implemented: FileProcessor class in src/file_processor.py with PDF text extraction (pymupdf), scanned PDF fallback (OpenAI vision API), and image text extraction (OpenAI vision API). 6 unit tests.
+- Files changed: src/file_processor.py (new), tests/test_file_processor.py (new)
+- **Learnings for future iterations:**
+  - `fitz.open(stream=raw, filetype="pdf")` to open PDF from bytes
+  - `page.get_pixmap(dpi=200).tobytes("png")` to render PDF pages as images for vision fallback
+  - `unittest.mock.patch("src.file_processor.OpenAI")` to mock OpenAI client at class level
+  - Empty PDF pages (no text) trigger vision fallback — use this to test the fallback path
+---
+
+## 2026-03-19 19:05 - US-005
+- What was implemented: Tripletex API knowledge base module with TRIPLETEX_API_REFERENCE string constant documenting all required endpoints, authentication, pagination, common task patterns, module enablement, error handling, Norwegian character handling, and efficiency guidelines. 17 unit tests.
+- Files changed: src/knowledge/__init__.py (new), src/knowledge/tripletex_api.py (new), tests/test_knowledge.py (new)
+- **Learnings for future iterations:**
+  - TRIPLETEX_API_REFERENCE is importable from both `src.knowledge` and `src.knowledge.tripletex_api`
+  - Reference fits within ~4000 token budget (~3700 chars / 4 ≈ 925 tokens, well under limit)
+  - Knowledge base documents 10+ endpoints with methods, required/optional fields, and example patterns
+  - Module enablement (departmentAccounting, projectAccounting) must be done via POST /v2/company/modules before using those features
+---
+
+## 2026-03-19 19:12 - US-006
+- What was implemented: PlanGenerator class in src/plan_generator.py with OpenAI LLM integration, system prompt including TRIPLETEX_API_REFERENCE, JSON response format, placeholder syntax ($stepN.path.to.value), support for file contents and error context. PlanStep and ExecutionPlan Pydantic models added to src/models.py. 7 unit tests.
+- Files changed: src/models.py (updated), src/plan_generator.py (new), tests/test_plan_generator.py (new)
+- **Learnings for future iterations:**
+  - Mock OpenAI at class level with `@patch("src.plan_generator.OpenAI")` — mock the class, not the instance
+  - `response_format={"type": "json_object"}` forces OpenAI to return valid JSON
+  - System prompt includes the full TRIPLETEX_API_REFERENCE string for LLM context
+  - Use `call_args[1]["messages"]` to inspect what was sent to OpenAI in tests
+---
+
+## 2026-03-19 19:14 - US-007
+- What was implemented: PlanExecutor class in src/plan_executor.py with step-by-step execution, placeholder resolution ($stepN.path.to.value), context tracking, and error handling. ExecutionResult model added to src/models.py. 15 unit tests.
+- Files changed: src/plan_executor.py (new), src/models.py (updated), tests/test_plan_executor.py (new)
+- **Learnings for future iterations:**
+  - `_resolve_placeholders()` recursively handles dicts, lists, and strings — use `PLACEHOLDER_RE.fullmatch()` for exact matching
+  - `_traverse()` handles both dict keys and list indices (via `int(key)`) in dot-notation paths
+  - Mock TripletexClient with `MagicMock()` — no need for `@patch`, just inject directly
+  - ExecutionResult tracks steps_completed, results, errors, and success for re-planning support
+---
+
+## 2026-03-19 19:16 - US-008
+- What was implemented: Re-planning on failure — PlanGenerator.replan() method that sends completed steps, errors, and original prompt to LLM for corrected plan. PlanExecutor.execute_with_replan() method that loops up to max_replans (default 2) attempts on failure. 5 new tests (2 for replan, 3 for execute_with_replan).
+- Files changed: src/plan_generator.py (updated), src/plan_executor.py (updated), tests/test_plan_generator.py (updated), tests/test_plan_executor.py (updated)
+- **Learnings for future iterations:**
+  - PlanExecutor imports PlanGenerator (no circular dependency since plan_generator doesn't import plan_executor)
+  - `execute_with_replan()` takes a PlanGenerator instance — good for dependency injection in orchestrator
+  - Mock side_effect with list to simulate multi-call sequences (first fail, then succeed)
+  - Replan user message includes completed step results as JSON so LLM knows what already succeeded
+---
+
+## 2026-03-19 19:20 - US-009
+- What was implemented: TaskOrchestrator class in src/orchestrator.py coordinating FileProcessor, PlanGenerator, PlanExecutor, and re-planning into a single workflow. Updated /solve endpoint in main.py to use TaskOrchestrator. Updated test_main.py to mock TaskOrchestrator for endpoint tests. 5 new integration tests in test_orchestrator.py.
+- Files changed: src/orchestrator.py (new), src/main.py (updated), tests/test_main.py (updated), tests/test_orchestrator.py (new)
+- **Learnings for future iterations:**
+  - Orchestrator catches all exceptions and always returns status=completed (competition requirement)
+  - Mock both `src.plan_generator.OpenAI` and `src.file_processor.OpenAI` separately in orchestrator tests — they're different import paths
+  - Use `responses` library alongside OpenAI mocks to test full flow with real HTTP mocking for Tripletex
+  - Test_main.py needs `@patch("src.main.TaskOrchestrator")` at class level since /solve now delegates to orchestrator
+  - `side_effect` list on OpenAI mock allows simulating generate_plan then replan as separate calls
+  - Test fixtures go in `tests/fixtures/` module — import with `from tests.fixtures.sample_prompts import SAMPLE_PROMPTS`
+---
+
+## 2026-03-19 19:22 - US-010
+- What was implemented: Multi-language prompt test coverage — sample_prompts.py fixture with 'create employee' prompts in all 7 languages (nb, nn, en, es, pt, de, fr), each with special character names. 6 new tests verifying PlanGenerator handles nb, en, es prompts and preserves special characters (æ, ø, å, ñ, ü, ç, etc.) across all languages.
+- Files changed: tests/fixtures/__init__.py (new), tests/fixtures/sample_prompts.py (new), tests/test_multilang.py (new)
+- **Learnings for future iterations:**
+  - SAMPLE_PROMPTS dict keyed by language code makes it easy to iterate or select specific languages for tests
+  - `any(ord(c) > 127 for c in name)` is a simple check for non-ASCII special characters
+  - All 82 tests passing after adding 6 new multi-language tests
+---
+
+## 2026-03-19 19:25 - US-011
+- What was implemented: Health check endpoint (GET /health) and structured JSON logging. Created src/logging_config.py with JSONFormatter (outputs JSON with timestamp, level, message, logger, extra context), SensitiveFilter (redacts session_token, api_key, password, secret, authorization, bearer values from log messages and args). Logging initialized via setup_logging() in main.py. Added 9 new tests (8 logging tests + 1 health endpoint test).
+- Files changed: src/logging_config.py (new), src/main.py (updated), tests/test_logging_config.py (new), tests/test_main.py (updated)
+- **Learnings for future iterations:**
+  - setup_logging() configures root logger — all child loggers (getLogger(__name__)) automatically inherit JSON formatting and sensitive filtering
+  - No changes needed to existing logger calls in tripletex_client, orchestrator, etc. — they all use standard logging.getLogger(__name__)
+  - SensitiveFilter uses regex to match key=value patterns for sensitive fields, applied to both msg and args
+  - All 91 tests passing after adding 9 new tests
+---
+
+## 2026-03-19 19:27 - US-012
+- What was implemented: Efficiency optimization in plan generation — added total_api_calls and error_count tracking fields to ExecutionResult, PlanExecutor now counts and logs API calls and errors after execution, execute_with_replan accumulates totals across retries and tracks replan_count, orchestrator logs efficiency summary (total_api_calls, error_count, replan_count) per /solve request. Enhanced system prompt with more explicit efficiency guidelines (never GET after POST, batch via /list endpoints, validate required fields to avoid 4xx). 6 new tests.
+- Files changed: src/models.py (updated), src/plan_executor.py (updated), src/plan_generator.py (updated), src/orchestrator.py (updated), tests/test_plan_executor.py (updated), tests/test_plan_generator.py (updated), tests/test_orchestrator.py (updated)
+- **Learnings for future iterations:**
+  - PlanExecutor.replan_count is an instance attribute reset at the start of execute_with_replan — orchestrator reads it after execution for logging
+  - total_api_calls and error_count accumulate across replan attempts in execute_with_replan by summing per-execution values
+  - Mock `src.orchestrator.logger` with `patch` to verify structured log calls contain expected fields
+  - All 97 tests passing after adding 6 new efficiency tracking tests
+---
+
+## 2026-03-19 19:31 - US-013
+- What was implemented: Dockerfile using Python 3.12-slim with layer-cached dependency install, docker-compose.yml with .env mounting and port mapping. Verified docker build succeeds and container serves /health endpoint correctly.
+- Files changed: Dockerfile (new), docker-compose.yml (new)
+- **Learnings for future iterations:**
+  - `pip install --no-cache-dir .` installs from pyproject.toml in Docker context — copies pyproject.toml first for layer caching
+  - Container needs OPENAI_API_KEY env var even for health check (app starts without error though)
+  - Use port mapping on different host port (e.g., 8001:8000) for testing to avoid conflicts
+  - All 97 tests still passing (no test changes needed for Docker story)
+---
+
+## 2026-03-19 19:32 - US-014
+- What was implemented: Full-flow integration tests in tests/test_integration.py with 5 tests covering create employee, create customer, create invoice (multi-step with ID linking), error recovery with replan, and exhausted retries. All use realistic mock fixtures for OpenAI and Tripletex APIs via responses library.
+- Files changed: tests/test_integration.py (new)
+- **Learnings for future iterations:**
+  - Integration tests follow same pattern as test_orchestrator.py but with more realistic fixtures and field-level assertions
+  - `_openai_response()` helper simplifies creating mock ChatCompletion responses — reusable across test files
+  - Testing exhausted retries requires 3 OpenAI mock responses (initial + 2 replans) and 3 failing Tripletex responses
+  - All 102 tests passing after adding 5 new integration tests
+---
+
+## 2026-03-19 19:35 - US-015
+- What was implemented: End-to-end test setup with Tripletex sandbox — conftest.py loading credentials from env vars or .env.test, test_create_employee.py (2 tests: basic creation + Norwegian characters), test_create_customer.py (2 tests: basic creation + details), test_full_flow.py (1 test: full orchestrator flow with employee creation verification). README updated with setup, running, and e2e test documentation.
+- Files changed: tests/e2e/__init__.py (new), tests/e2e/conftest.py (new), tests/e2e/test_create_employee.py (new), tests/e2e/test_create_customer.py (new), tests/e2e/test_full_flow.py (new), README.md (updated)
+- **Learnings for future iterations:**
+  - E2E conftest uses `load_dotenv(.env.test, override=False)` so env vars take precedence over file
+  - `skip_no_credentials` marker from conftest.py can be imported and applied at class level for clean skip behavior
+  - Use `uuid.uuid4().hex[:6]` suffix on entity names to avoid collisions in shared sandbox
+  - E2E tests are skipped by default (no credentials) — 102 unit tests + 5 e2e tests = 107 total collected
+  - Full-flow test verifies entity creation by searching the API after orchestrator run
+---

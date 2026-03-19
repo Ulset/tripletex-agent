@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 
@@ -7,7 +8,7 @@ from src.tripletex_client import TripletexAPIError, TripletexClient
 
 logger = logging.getLogger(__name__)
 
-PLACEHOLDER_RE = re.compile(r"\$step(\d+)\.(.+)")
+PLACEHOLDER_RE = re.compile(r"\$step(\d+)([\.\[].+)")
 
 
 class PlanExecutor:
@@ -27,6 +28,12 @@ class PlanExecutor:
                 endpoint = _resolve_placeholders(step.endpoint, context)
                 payload = _resolve_placeholders(step.payload, context) if step.payload else None
                 params = _resolve_placeholders(step.params, context) if step.params else None
+
+                logger.info(
+                    "Executing step %d: %s %s | resolved_payload=%s",
+                    step.step_number, step.action, endpoint,
+                    json.dumps(payload, ensure_ascii=False) if payload else "null",
+                )
 
                 action = step.action.upper()
                 if action == "GET":
@@ -141,10 +148,17 @@ def _resolve_placeholders(obj, context: dict[int, dict]):
     return obj
 
 
+def _normalize_path(path: str) -> list[str]:
+    """Normalize a path like 'values[0].id' or 'values.0.id' into ['values', '0', 'id']."""
+    # Replace bracket notation with dot notation: values[0] -> values.0
+    normalized = re.sub(r'\[(\w+)\]', r'.\1', path)
+    return [k for k in normalized.split(".") if k]
+
+
 def _traverse(data: dict, path: str):
-    """Traverse a nested dict/list using dot-notation path."""
+    """Traverse a nested dict/list using dot-notation or bracket-notation path."""
     current = data
-    for key in path.split("."):
+    for key in _normalize_path(path):
         if isinstance(current, list):
             current = current[int(key)]
         elif isinstance(current, dict):

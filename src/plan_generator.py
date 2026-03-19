@@ -64,7 +64,9 @@ class PlanGenerator:
         if error_context:
             user_message += f"\n\nPrevious error context:\n{error_context}"
 
-        logger.info("Generating plan for prompt: %s", prompt[:100])
+        logger.info("Generating plan for prompt:\n%s", prompt)
+        if file_contents:
+            logger.info("File contents included: %s", [f["filename"] for f in file_contents])
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -77,8 +79,19 @@ class PlanGenerator:
         )
 
         content = response.choices[0].message.content
+        logger.info("LLM raw response:\n%s", content)
+
         data = json.loads(content)
         plan = ExecutionPlan.model_validate(data)
+
+        for step in plan.steps:
+            logger.info(
+                "Plan step %d: %s %s | payload=%s | params=%s | %s",
+                step.step_number, step.action, step.endpoint,
+                json.dumps(step.payload, ensure_ascii=False) if step.payload else "null",
+                json.dumps(step.params, ensure_ascii=False) if step.params else "null",
+                step.description,
+            )
 
         logger.info("Generated plan with %d steps", len(plan.steps))
         return plan
@@ -113,7 +126,7 @@ class PlanGenerator:
         user_message += f"\n\nAdditional error context:\n{error_context}"
         user_message += "\n\nGenerate a corrected plan for the REMAINING work only. Do NOT re-do steps that already succeeded."
 
-        logger.info("Re-planning after %d completed steps", execution_result.steps_completed)
+        logger.info("Re-planning after %d completed steps. Errors: %s", execution_result.steps_completed, error_summary)
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -126,8 +139,18 @@ class PlanGenerator:
         )
 
         content = response.choices[0].message.content
+        logger.info("Replan LLM raw response:\n%s", content)
+
         data = json.loads(content)
         plan = ExecutionPlan.model_validate(data)
+
+        for step in plan.steps:
+            logger.info(
+                "Replan step %d: %s %s | payload=%s | %s",
+                step.step_number, step.action, step.endpoint,
+                json.dumps(step.payload, ensure_ascii=False) if step.payload else "null",
+                step.description,
+            )
 
         logger.info("Re-plan generated with %d steps", len(plan.steps))
         return plan

@@ -18,7 +18,12 @@ class TaskOrchestrator:
     def solve(self, request: SolveRequest) -> SolveResponse:
         start_time = time.time()
         try:
-            logger.info("Received prompt: %s", request.prompt[:100])
+            logger.info("=" * 60)
+            logger.info("NEW TASK RECEIVED")
+            logger.info("Full prompt:\n%s", request.prompt)
+            logger.info("Files: %d attached", len(request.files))
+            logger.info("Base URL: %s", request.tripletex_credentials.base_url)
+            logger.info("=" * 60)
 
             # 1) Process files
             processor = FileProcessor()
