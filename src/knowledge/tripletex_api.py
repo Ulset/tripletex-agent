@@ -40,16 +40,14 @@ TRIPLETEX_API_REFERENCE = """
 - POST /v2/order - Create order. Required: customer(id), deliveryDate, orderLines(list of {product(id), count}). Optional: orderDate, receiver
 
 ### Invoice
-- GET /v2/invoice - List invoices. Params: invoiceDateFrom, invoiceDateTo, fields, count, from. NOTE: use invoiceDateFrom/invoiceDateTo to filter, NOT customerId directly as a param.
-- GET /v2/invoice/{id} - Get single invoice by ID
+- GET /v2/invoice - List invoices. REQUIRED params: invoiceDateFrom (YYYY-MM-DD), invoiceDateTo (YYYY-MM-DD). Optional: customerId, fields, count, from. TIP: use a wide date range like "2020-01-01" to "2030-12-31" to find all invoices, then filter by customer ID from the results.
+- GET /v2/invoice/{id} - Get single invoice by ID (use fields=* to see all fields)
 - POST /v2/invoice - Create invoice from order. Required: orderId, invoiceDate, sendMethod("EMAIL"|"MANUAL"|"EHF"|"EFAKTURA"|"AVTALEGIRO"|"VIPPS")
 - POST /v2/order/:invoiceMultipleOrders - Invoice multiple orders at once
 
 ### Payment
-- GET /v2/payment - List payments. Params: fields, count, from
-- POST /v2/payment - Register a payment. Required: paymentDate, amount, typeId. See payment types.
-- POST /v2/invoice/{id}/:payment - Register payment for a specific invoice. Required: paymentDate, paymentTypeId, amount.
-- GET /v2/ledger/paymentType - List available payment types (use to get the correct paymentTypeId)
+- POST /v2/invoice/{id}/:payment - Register payment for a specific invoice. Required: paymentDate (YYYY-MM-DD), paymentTypeId (int), paidAmount (number). First GET /v2/ledger/paymentType to find available payment types.
+- GET /v2/ledger/paymentType - List available payment types. Use the id of a suitable type (e.g., bank transfer) for paymentTypeId.
 
 ### Travel Expense
 - GET /v2/travelExpense - List travel expenses. Params: employeeId, fields, count, from
