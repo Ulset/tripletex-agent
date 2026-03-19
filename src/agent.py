@@ -18,8 +18,8 @@ SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description
 - POST /v2/employee — create employee. Include: firstName, lastName, userType("STANDARD"), email, department(id), dateOfBirth if given.
 - POST /v2/employee/employment — create employment (start date). Include: employee(id), startDate.
 - GET /v2/department?fields=id&count=1 — get a department ID (needed for employee creation).
-- POST /v2/customer — create customer. Include: name, organizationNumber, email, phoneNumber, postalAddress if given.
-- POST /v2/supplier — create supplier. Include: name, organizationNumber, email, isSupplier(true).
+- POST /v2/customer — create customer. Include: name, organizationNumber, email, phoneNumber. For addresses use postalAddress: {"addressLine1": "Street 1", "postalCode": "0001", "city": "Oslo"}.
+- POST /v2/supplier — create supplier. Include: name, organizationNumber, email, isSupplier(true). For addresses use postalAddress: {"addressLine1": "...", "postalCode": "...", "city": "..."}.
 - POST /v2/product — create product. Include: name, number, priceExcludingVatCurrency.
 - POST /v2/project — create project. Include: name, number, projectManager(id), startDate.
 - POST /v2/department — create department. Include: name, departmentNumber.
@@ -45,8 +45,9 @@ SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description
 - GET returns {"values": [...]}, POST/PUT returns {"value": {...}}.
 - Dates use YYYY-MM-DD format. Preserve Norwegian characters (æ, ø, å) exactly as given.
 - Minimize API calls. Reuse IDs from POST responses.
-- If an API call fails, read the error message and fix the issue. Use search_api_docs only if you can't figure out the correct field/endpoint.
-- Never give up on data from the prompt.
+- If an API call fails, read the error message and fix it directly. Do NOT search docs — the error already tells you what's wrong (e.g., "field X is required" means add field X, "wrong type" means fix the format).
+- Only use search_api_docs if the error mentions an UNKNOWN endpoint or you need to discover a sub-resource you've never seen.
+- Never give up on data from the prompt. Never call search_api_docs more than twice per task.
 """
 
 CALL_API_TOOL = {
