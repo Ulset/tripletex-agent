@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 
 from src.config import settings
 from src.models import SolveRequest, SolveResponse
+from src.orchestrator import TaskOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,8 @@ async def root():
 
 @app.post("/solve", response_model=SolveResponse)
 async def solve(request: SolveRequest, _: None = Depends(verify_api_key)):
-    try:
-        return SolveResponse(status="completed")
-    except Exception as e:
-        logger.exception("Error processing solve request")
-        return SolveResponse(status="completed")
+    orchestrator = TaskOrchestrator(settings)
+    return orchestrator.solve(request)
 
 
 if __name__ == "__main__":
