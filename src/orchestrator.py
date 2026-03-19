@@ -2,11 +2,10 @@ import json
 import logging
 import time
 
+from src.agent import TripletexAgent
 from src.config import Settings
 from src.file_processor import FileProcessor
 from src.models import SolveRequest, SolveResponse
-from src.plan_executor import PlanExecutor
-from src.plan_generator import PlanGenerator
 from src.tripletex_client import TripletexClient
 
 logger = logging.getLogger(__name__)
@@ -39,48 +38,21 @@ class TaskOrchestrator:
             )
             logger.info("Processed %d files", len(file_contents))
 
-            # 2) Generate plan
-            generator = PlanGenerator(
-                openai_api_key=self.config.openai_api_key,
-                model=self.config.openai_model,
-            )
-            plan = generator.generate_plan(
-                prompt=request.prompt,
-                file_contents=file_contents if file_contents else None,
-            )
-            logger.info("Generated plan with %d steps", len(plan.steps))
-
-            # 3) Execute plan with re-planning on failure
+            # 2) Run agent loop
             client = TripletexClient(
                 base_url=request.tripletex_credentials.base_url,
                 session_token=request.tripletex_credentials.session_token,
             )
-            executor = PlanExecutor(client)
-            elapsed = time.time() - start_time
-            # Reserve 60s buffer for re-planning; cap replans based on time budget
-            max_replans = 2 if elapsed < 180 else (1 if elapsed < 240 else 0)
-            result = executor.execute_with_replan(
-                plan=plan,
-                generator=generator,
-                original_prompt=request.prompt,
+            agent = TripletexAgent(
+                openai_api_key=self.config.openai_api_key,
+                model=self.config.openai_model,
+                tripletex_client=client,
                 file_contents=file_contents if file_contents else None,
-                max_replans=max_replans,
             )
+            agent.solve(request.prompt)
 
             duration = time.time() - start_time
-            logger.info(
-                "Workflow complete: steps_completed=%d, errors=%d, success=%s, duration=%.2fs",
-                result.steps_completed,
-                len(result.errors),
-                result.success,
-                duration,
-            )
-            logger.info(
-                "Efficiency summary: total_api_calls=%d, error_count=%d, replan_count=%d",
-                result.total_api_calls,
-                result.error_count,
-                executor.replan_count,
-            )
+            logger.info("Workflow complete: duration=%.2fs", duration)
 
         except Exception:
             duration = time.time() - start_time
