@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agent import TripletexAgent, CALL_API_TOOL, MAX_ITERATIONS
+from src.agent import TripletexAgent, CALL_API_TOOL, MAX_ITERATIONS, get_system_prompt
 from src.tripletex_client import TripletexAPIError
 
 
@@ -234,42 +234,43 @@ class TestTripletexAgent:
 class TestSystemPrompt:
     """Tests for US-002: System prompt content verification."""
 
+    def _prompt(self):
+        return get_system_prompt()
+
     def test_instructs_search_docs(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "search_api_docs" in SYSTEM_PROMPT
+        assert "search_api_docs" in self._prompt()
 
     def test_instructs_include_all_data(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "ALL Data" in SYSTEM_PROMPT or "ALL data" in SYSTEM_PROMPT or "EVERY piece of data" in SYSTEM_PROMPT
+        p = self._prompt()
+        assert "ALL Data" in p or "ALL data" in p or "EVERY piece of data" in p
 
     def test_instructs_use_call_api_tool(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "call_api" in SYSTEM_PROMPT
+        assert "call_api" in self._prompt()
 
     def test_instructs_text_response_when_done(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "text message" in SYSTEM_PROMPT.lower() or "no tool call" in SYSTEM_PROMPT.lower()
+        p = self._prompt().lower()
+        assert "text message" in p or "no tool call" in p
 
     def test_documents_response_shapes(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "values" in SYSTEM_PROMPT
-        assert "value" in SYSTEM_PROMPT
+        p = self._prompt()
+        assert "values" in p
+        assert "value" in p
 
     def test_includes_efficiency_guidelines(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "Minimize" in SYSTEM_PROMPT or "minimize" in SYSTEM_PROMPT
-        assert "Reuse IDs" in SYSTEM_PROMPT or "reuse IDs" in SYSTEM_PROMPT
+        p = self._prompt()
+        assert "Minimize" in p or "minimize" in p
+        assert "Reuse IDs" in p or "reuse IDs" in p
 
     def test_handles_all_seven_languages(self):
-        from src.agent import SYSTEM_PROMPT
+        p = self._prompt()
         for lang in ["Norwegian Bokmål", "Norwegian Nynorsk", "English", "Spanish", "Portuguese", "German", "French"]:
-            assert lang in SYSTEM_PROMPT, f"Missing language: {lang}"
+            assert lang in p, f"Missing language: {lang}"
 
     def test_preserves_norwegian_characters(self):
-        from src.agent import SYSTEM_PROMPT
-        assert "æ" in SYSTEM_PROMPT
-        assert "ø" in SYSTEM_PROMPT
-        assert "å" in SYSTEM_PROMPT
+        p = self._prompt()
+        assert "æ" in p
+        assert "ø" in p
+        assert "å" in p
 
 
 class TestAgentLogging:

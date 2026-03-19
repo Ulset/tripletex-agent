@@ -5,36 +5,28 @@ import uuid
 
 from openai import OpenAI
 
-from src.api_docs import get_endpoint_schema, search_api_docs
+from src.api_docs import generate_endpoint_reference, get_endpoint_schema, search_api_docs
 from src.tripletex_client import TripletexAPIError, TripletexClient
 
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 15
 
-SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description (which may be in Norwegian Bokmål, Norwegian Nynorsk, English, Spanish, Portuguese, German, or French) and must complete it by making API calls to Tripletex.
+_SYSTEM_PROMPT_HEADER = """You are a Tripletex API agent. You receive a task description (which may be in Norwegian Bokmål, Norwegian Nynorsk, English, Spanish, Portuguese, German, or French) and must complete it by making API calls to Tripletex.
 
-## Common Endpoints — USE THESE DIRECTLY, do NOT search docs for these. All fields listed are REQUIRED unless marked optional.
+## Common Endpoints — USE THESE DIRECTLY, do NOT search docs for these.
+## (REQ) = required field. Field names are from the official OpenAPI spec.
 
-- POST /v2/employee — create employee. Include: firstName, lastName, userType("STANDARD"), email, department(id), dateOfBirth if given.
-- POST /v2/employee/employment — create employment (start date). Include: employee(id), startDate.
-- GET /v2/department?fields=id&count=1 — get a department ID (needed for employee creation).
+"""
+
+_SYSTEM_PROMPT_FOOTER = """
+
+## Workflows
+
 - EMPLOYEE WORKFLOW: (1) GET /v2/department?fields=id&count=1 → departmentId. (2) POST /v2/employee with firstName, lastName, userType("STANDARD"), email, department(id), dateOfBirth. (3) IF start date given: POST /v2/employee/employment with employee(id), startDate. Employment is ALWAYS a separate POST — never put startDate or employment fields on the employee object.
-- POST /v2/customer — create customer. Include: name, organizationNumber, email, phoneNumber.
-- ADDRESSES: postalAddress is ALWAYS a JSON object: {"addressLine1": "...", "postalCode": "...", "city": "..."}. NEVER send it as a string.
-- POST /v2/supplier — create supplier. Include: name, organizationNumber, email, isSupplier(true). For addresses use postalAddress: {"addressLine1": "...", "postalCode": "...", "city": "..."}.
-- POST /v2/product — create product. Include: name, number, priceExcludingVatCurrency.
-- POST /v2/project — create project. Include: name, number, projectManager(id), startDate. NEVER use /v2/project/list — always POST to /v2/project directly.
-- PROJECT WORKFLOW: (1) GET /v2/employee?email=X → projectManager ID. (2) If customer link needed: GET /v2/customer?organizationNumber=X → customerId. (3) POST /v2/project with name, number, projectManager(id), startDate, and customer(id) if given.
-- POST /v2/department — create department. Include: name, departmentNumber.
-- POST /v2/order — create order. Include: customer(id), deliveryDate, orderLines.
-- POST /v2/invoice — create invoice from order. Include: orderId, invoiceDate, sendMethod.
-- PUT /v2/invoice/{id}/:payment — register payment. Use QUERY PARAMS (not body): paymentDate, paymentTypeId, paidAmount, paidAmountCurrency.
-- GET /v2/invoice/paymentType — list payment types. Use "Bankinnskudd" (bank deposit) by default.
-- GET /v2/invoice?invoiceDateFrom=2000-01-01&invoiceDateTo=2030-12-31 — list invoices. Both date params are REQUIRED.
+- PROJECT WORKFLOW: (1) GET /v2/employee?email=X → projectManager ID. (2) If customer link needed: GET /v2/customer?organizationNumber=X → customerId. (3) POST /v2/project with name, number, projectManager(id), startDate, and customer(id) if given. NEVER use /v2/project/list — always POST to /v2/project directly.
 - PAYMENT WORKFLOW: (1) GET /v2/customer?organizationNumber=X → customerId. (2) GET /v2/invoice?invoiceDateFrom=2000-01-01&invoiceDateTo=2030-12-31&customerId=X → invoice ID + amountOutstanding. (3) GET /v2/invoice/paymentType → paymentTypeId for "Bankinnskudd". (4) PUT /v2/invoice/{id}/:payment with QUERY PARAMS paymentDate=YYYY-MM-DD, paymentTypeId=X, paidAmount=amountOutstanding, paidAmountCurrency=amountOutstanding.
-- GET /v2/employee?email=x — find employee by email.
-- GET /v2/customer?organizationNumber=x — find customer by org number.
+- ADDRESSES: postalAddress is ALWAYS a JSON object: {"addressLine1": "...", "postalCode": "...", "city": "..."}. NEVER send it as a string.
 
 ## How to Work
 
@@ -55,6 +47,28 @@ SYSTEM_PROMPT = """You are a Tripletex API agent. You receive a task description
 - Only use search_api_docs if the error mentions an UNKNOWN endpoint or you need to discover a sub-resource you've never seen.
 - Never give up on data from the prompt. Never call search_api_docs more than twice per task.
 """
+
+
+_SYSTEM_PROMPT_CACHE: str | None = None
+
+
+def get_system_prompt() -> str:
+    """Build the system prompt with spec-generated endpoint reference. Cached after first call."""
+    global _SYSTEM_PROMPT_CACHE
+    if _SYSTEM_PROMPT_CACHE is not None:
+        return _SYSTEM_PROMPT_CACHE
+    try:
+        ref = generate_endpoint_reference()
+    except Exception:
+        ref = "(Could not load endpoint reference from OpenAPI spec)"
+    _SYSTEM_PROMPT_CACHE = _SYSTEM_PROMPT_HEADER + ref + _SYSTEM_PROMPT_FOOTER
+    return _SYSTEM_PROMPT_CACHE
+
+
+def _reset_system_prompt_cache():
+    """Reset prompt cache — used in tests."""
+    global _SYSTEM_PROMPT_CACHE
+    _SYSTEM_PROMPT_CACHE = None
 
 CALL_API_TOOL = {
     "type": "function",
@@ -138,7 +152,7 @@ class TripletexAgent:
             user_message += f"\n\nAttached file contents:\n{file_text}"
 
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt()},
             {"role": "user", "content": user_message},
         ]
 

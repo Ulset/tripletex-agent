@@ -2,6 +2,7 @@
 
 Fetches the OpenAPI spec once and provides a search function
 that the agent can use to discover endpoints and their schemas.
+Supports OpenAPI 3.x (requestBody/content) with 2.x fallback (parameters[in=body]).
 """
 
 import json
@@ -13,6 +14,29 @@ import requests
 logger = logging.getLogger(__name__)
 
 OPENAPI_URL = "https://tripletex.no/v2/openapi.json"
+
+# Registry of curated endpoints with business-logic notes.
+# Field names are validated against the spec at test time.
+# (method, spec_path, required_fields, notes)
+ENDPOINT_REGISTRY = [
+    ("POST", "/employee", ["firstName", "lastName", "userType", "email", "department"],
+     'userType must be "STANDARD"'),
+    ("POST", "/employee/employment", ["employee", "startDate"], ""),
+    ("POST", "/customer", ["name"], ""),
+    ("POST", "/supplier", ["name", "isSupplier"], "isSupplier must be true"),
+    ("POST", "/product", ["name", "number"], ""),
+    ("POST", "/project", ["name", "number", "projectManager", "startDate"], ""),
+    ("POST", "/department", ["name", "departmentNumber"], ""),
+    ("POST", "/order", ["customer", "deliveryDate", "orderLines"],
+     "orderLines use 'count' for quantity"),
+    ("PUT", "/order/{id}/:invoice", [], "Create invoice FROM order. invoiceDate REQUIRED query param."),
+    ("PUT", "/invoice/{id}/:payment", [], "QUERY PARAMS only, no body."),
+    ("GET", "/invoice/paymentType", [], 'Find paymentTypeId for "Bankinnskudd"'),
+    ("GET", "/invoice", [], "invoiceDateFrom + invoiceDateTo both REQUIRED"),
+    ("GET", "/employee", [], "?email=X to find by email"),
+    ("GET", "/customer", [], "?organizationNumber=X to find by org number"),
+    ("GET", "/department", [], "?fields=id&count=1 to get a department ID"),
+]
 
 
 @lru_cache(maxsize=1)
@@ -33,6 +57,31 @@ def _resolve_ref(spec: dict, ref: str) -> dict:
     for part in parts:
         node = node.get(part, {})
     return node
+
+
+def _get_request_body_schema(method_info: dict) -> dict | None:
+    """Extract request body schema, supporting both OpenAPI 3.x and 2.x."""
+    # OpenAPI 3.x: requestBody.content['application/json; charset=utf-8'].schema
+    rb = method_info.get("requestBody", {}).get("content", {})
+    for content_type, content_val in rb.items():
+        if "json" in content_type:
+            return content_val.get("schema")
+    # OpenAPI 2.x fallback: parameters[in=body].schema
+    for p in method_info.get("parameters", []):
+        if p.get("in") == "body":
+            return p.get("schema")
+    return None
+
+
+def _get_response_schema(response_info: dict) -> dict | None:
+    """Extract response schema, supporting both OpenAPI 3.x and 2.x."""
+    # OpenAPI 3.x: content['application/json'].schema
+    content = response_info.get("content", {})
+    for content_type, content_val in content.items():
+        if "json" in content_type:
+            return content_val.get("schema")
+    # OpenAPI 2.x fallback: schema directly on response
+    return response_info.get("schema") or None
 
 
 def _extract_schema_fields(spec: dict, schema: dict, depth: int = 0) -> list[str]:
@@ -133,16 +182,15 @@ def get_endpoint_schema(method: str, endpoint: str) -> str | None:
     if not method_info:
         return None
 
-    # Try request body fields
-    params = method_info.get("parameters", [])
-    body_params = [p for p in params if p.get("in") == "body"]
-    if body_params:
-        body_schema = body_params[0].get("schema", {})
+    # Try request body fields (OpenAPI 3.x + 2.x)
+    body_schema = _get_request_body_schema(method_info)
+    if body_schema:
         fields = _extract_schema_fields(spec, body_schema)
         if fields:
             return f"Valid fields for {method.upper()} /v2{spec_path}:\n" + "\n".join(fields)
 
     # Fall back to query params
+    params = method_info.get("parameters", [])
     query_params = [p for p in params if p.get("in") == "query"]
     if query_params:
         param_strs = []
@@ -209,12 +257,11 @@ def search_api_docs(query: str) -> str:
                         break
 
         if not path_match:
-            # Fallback: check if query words match request body field names
+            # Fallback: check if query words match request body field names (3.x + 2.x)
             for method_info in methods.values():
                 if isinstance(method_info, dict):
-                    body_params = [p for p in method_info.get("parameters", []) if p.get("in") == "body"]
-                    if body_params:
-                        body_schema = body_params[0].get("schema", {})
+                    body_schema = _get_request_body_schema(method_info)
+                    if body_schema:
                         field_names = _get_schema_field_names(spec, body_schema)
                         if any(w in field_names for w in query_words):
                             path_match = True
@@ -242,10 +289,9 @@ def search_api_docs(query: str) -> str:
                     param_strs.append(f"{p['name']}{req}")
                 entry += f"\n  Query params: {', '.join(param_strs)}"
 
-            # Request body schema
-            body_params = [p for p in params if p.get("in") == "body"]
-            if body_params:
-                body_schema = body_params[0].get("schema", {})
+            # Request body schema (OpenAPI 3.x + 2.x)
+            body_schema = _get_request_body_schema(info)
+            if body_schema:
                 fields = _extract_schema_fields(spec, body_schema)
                 if fields:
                     entry += "\n  Request body fields:"
@@ -254,11 +300,11 @@ def search_api_docs(query: str) -> str:
                     if len(fields) > 25:
                         entry += f"\n    ... and {len(fields) - 25} more fields"
 
-            # Response schema (200/201)
-            responses = info.get("responses", {})
+            # Response schema (200/201) — OpenAPI 3.x + 2.x
+            resp_info = info.get("responses", {})
             for code in ["200", "201"]:
-                if code in responses:
-                    resp_schema = responses[code].get("schema", {})
+                if code in resp_info:
+                    resp_schema = _get_response_schema(resp_info[code])
                     if resp_schema:
                         fields = _extract_schema_fields(spec, resp_schema)
                         if fields:
@@ -278,3 +324,72 @@ def search_api_docs(query: str) -> str:
 
     header = f"Found {len(results)} endpoint(s) matching '{query}':\n"
     return header + "\n".join(results)
+
+
+def generate_endpoint_reference() -> str:
+    """Generate endpoint field reference from the OpenAPI spec and ENDPOINT_REGISTRY.
+
+    Field names come from the spec (source of truth). Required markers and
+    business-logic notes come from the curated registry (hand-maintained).
+    Falls back to registry-only info if the spec is unavailable.
+    """
+    try:
+        spec = _load_spec()
+    except Exception:
+        spec = None
+
+    lines = []
+    for method, path, required_fields, notes in ENDPOINT_REGISTRY:
+        entry = f"- {method} /v2{path}"
+
+        # Try to get field info from spec
+        spec_fields_req = []
+        spec_fields_other = []
+        query_params = []
+        if spec:
+            path_info = spec.get("paths", {}).get(path, {})
+            method_info = path_info.get(method.lower(), {})
+            if method_info:
+                # Body fields — required fields first
+                body_schema = _get_request_body_schema(method_info)
+                if body_schema:
+                    if "$ref" in body_schema:
+                        body_schema = _resolve_ref(spec, body_schema["$ref"])
+                    props = body_schema.get("properties", {})
+                    for fname in props:
+                        if fname in ("id", "version", "url", "changes"):
+                            continue
+                        if fname in required_fields:
+                            spec_fields_req.append(f"{fname} (REQ)")
+                        else:
+                            spec_fields_other.append(fname)
+
+                # Query params
+                for p in method_info.get("parameters", []):
+                    if p.get("in") == "query":
+                        req = " (REQ)" if p.get("required") else ""
+                        query_params.append(f"{p['name']}{req}")
+
+        # Required fields always shown first, then fill up to 15
+        spec_fields = spec_fields_req + spec_fields_other
+        if spec_fields:
+            shown = spec_fields_req + spec_fields_other[:max(0, 15 - len(spec_fields_req))]
+            remaining = len(spec_fields) - len(shown)
+            entry += f" — fields: {', '.join(shown)}"
+            if remaining > 0:
+                entry += f" (+{remaining} more)"
+        elif required_fields:
+            # Fallback: use registry required fields only
+            entry += f" — required: {', '.join(required_fields)}"
+
+        if query_params:
+            entry += f" | query: {', '.join(query_params[:8])}"
+            if len(query_params) > 8:
+                entry += f" (+{len(query_params) - 8} more)"
+
+        if notes:
+            entry += f". {notes}"
+
+        lines.append(entry)
+
+    return "\n".join(lines)

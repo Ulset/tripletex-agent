@@ -1,7 +1,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from src.agent import SYSTEM_PROMPT
 from tests.fixtures.sample_prompts import SAMPLE_PROMPTS
 
 
