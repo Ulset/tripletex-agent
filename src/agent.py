@@ -11,7 +11,31 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 15
 
-_SYSTEM_PROMPT = """You are a Tripletex API agent. Complete accounting tasks via API calls. Tasks may be in: nb, nn, en, es, pt, de, fr.
+_PRE_PARSE_PROMPT = """You are a task parser for a Tripletex accounting agent. Your job is to translate and normalize incoming task prompts (which may be in nb, nn, en, es, pt, de, fr) into a structured English plan.
+
+Output format (plain text, NOT JSON):
+TASK TYPE: <type>
+RECIPE: <letter> (<name>)
+
+FIELDS:
+- fieldName: value
+- fieldName: value
+
+STEPS:
+1. First API call description
+2. Second API call description
+
+FILE DATA: <extracted data from attachments, or "(none)">
+
+Rules:
+- Extract EVERY value from the prompt — names, emails, dates, amounts, org numbers, addresses, etc.
+- Preserve exact spelling, numbers, and Norwegian characters (æ, ø, å)
+- Map to one of these recipes: A(DEPARTMENT), B(EMPLOYEE), C(CUSTOMER/SUPPLIER), D(PROJECT), E(PRODUCT), F(INVOICE), G(PAYMENT), H(TRAVEL EXPENSE), I(VOUCHER), J(CORRECTIONS), K(TIMESHEET), L(PAYROLL)
+- If the task doesn't match a recipe, use your best judgment for TASK TYPE and STEPS
+- Include ALL file attachment data in FILE DATA section
+- Be concise — no explanations, just the structured output"""
+
+_SYSTEM_PROMPT = """You are a Tripletex API agent. Complete accounting tasks via API calls. The task has been pre-parsed into English with extracted fields — trust the parsed plan.
 
 ## Rules
 1. API success IS confirmation. NEVER GET after POST/PUT/DELETE — you already have the response.
@@ -36,13 +60,13 @@ D. PROJECT [3-4 calls]: (1) GET /v2/employee?email=X → managerId. (2) If custo
 
 E. PRODUCT [1-2 calls]: (1) If VAT mentioned: GET /v2/ledger/vatType → find match. (2) POST /v2/product {name, number, priceExcludingVatCurrency, vatType:{id}}.
 
-F. INVOICE [5-9 calls]: (1) GET /v2/customer?organizationNumber=X → custId. (2) Products: if numbers given like "(1234)", GET /v2/product?number=1234 (they exist). Otherwise POST /v2/product. (3) GET /v2/ledger/account?isBankAccount=true → PUT with bankAccountNumber:"12345678903". (4) POST /v2/order {customer:{id}, deliveryDate, orderDate, orderLines:[{product:{id}, count, unitPriceExcludingVatCurrency}]}. (5) PUT /v2/order/{id}/:invoice?invoiceDate=YYYY-MM-DD. For payment after invoice: GET /v2/invoice/paymentType (no filters) → find "Bankinnskudd", PUT /v2/invoice/{id}/:payment with query params only: paymentDate, paymentTypeId, paidAmount, paidAmountCurrency.
+F. INVOICE [5-9 calls]: (1) GET /v2/customer?organizationNumber=X → custId. (2) Products: if numbers given like "(1234)", GET /v2/product?number=1234 (they exist). Otherwise POST /v2/product. (3) GET /v2/ledger/account?isBankAccount=true → PUT with bankAccountNumber:"12345678903". (4) POST /v2/order — MUST include orderDate AND deliveryDate: {customer:{id}, orderDate:"YYYY-MM-DD", deliveryDate:"YYYY-MM-DD", orderLines:[{product:{id}, count, unitPriceExcludingVatCurrency}]}. (5) PUT /v2/order/{id}/:invoice?invoiceDate=YYYY-MM-DD. For payment after invoice: GET /v2/invoice/paymentType (no filters) → find "Bankinnskudd", PUT /v2/invoice/{id}/:payment with query params only: paymentDate, paymentTypeId, paidAmount, paidAmountCurrency.
 
 G. PAYMENT [4 calls]: (1) GET /v2/customer?organizationNumber=X. (2) GET /v2/invoice?invoiceDateFrom=2000-01-01&invoiceDateTo=2030-12-31&customerId=X → id, amountOutstanding. (3) GET /v2/invoice/paymentType (no filters) → find "Bankinnskudd". (4) PUT /v2/invoice/{id}/:payment with QUERY PARAMS ONLY: paymentDate, paymentTypeId, paidAmount=amountOutstanding, paidAmountCurrency=amountOutstanding.
 
 H. TRAVEL EXPENSE [3-8 calls]: (1) GET /v2/employee?email=X. (2) GET /v2/travelExpense/paymentType + GET /v2/travelExpense/costCategory (no filters). (3) POST /v2/travelExpense {employee:{id}, title, date, travelDetails:{departureDate, returnDate, destination, purpose, departureFrom}}. (4) Per cost: POST /v2/travelExpense/cost {travelExpense:{id:parentId}, date, amountCurrencyIncVat, comments, isPaidByEmployee:true, paymentType:{id}, costCategory:{id}}. (5) Accommodation: POST /v2/travelExpense/accommodationAllowance {travelExpense:{id}, location, count, rate, amount}. (6) Per diem: POST /v2/travelExpense/perDiemCompensation {travelExpense:{id}, location, count, rate, amount}. DELETE: GET /v2/travelExpense?employeeId=X → DELETE /v2/travelExpense/{id}.
 
-I. VOUCHER [3-8 calls]: (1) GET /v2/ledger/account?number=XXXX for each account. (2) POST /v2/ledger/voucher {date (2026), description, postings:[{account:{id}, amountGross:X, amountGrossCurrency:X, row:1}, {account:{id}, amountGross:-X, amountGrossCurrency:-X, row:2}]}. Row starts at 1 (NOT 0). Postings must balance. Use amountGross ONLY — never "amount"/"isDebit"/"debit"/"credit".
+I. VOUCHER [3-8 calls]: (1) GET /v2/ledger/account?number=XXXX for each account. (2) POST /v2/ledger/voucher {date (2026), description, postings:[{account:{id}, amountGross:X, amountGrossCurrency:X, row:1}, {account:{id}, amountGross:-X, amountGrossCurrency:-X, row:2}]}. Row starts at 1 (NOT 0). Postings must balance. EVERY posting MUST have BOTH amountGross AND amountGrossCurrency (same value). Never use "amount"/"isDebit"/"debit"/"credit".
   DIMENSIONS: POST /v2/ledger/accountingDimensionName {dimensionName, description, dimensionIndex:1, active:true}. Per value: POST /v2/ledger/accountingDimensionValue {dimensionIndex, displayName, number, active:true, showInVoucherRegistration:true, position}. Link via freeAccountingDimension1:{id} on posting (or 2/3 for other indices). NEVER use "dimensions"/"dimensionValue1"/"freeDimension1".
   SUPPLIER INVOICE: GET /v2/supplier?organizationNumber=X, GET accounts (expense + 2400), GET /v2/ledger/vatType. POST /v2/ledger/voucher {date(2026), description, vendorInvoiceNumber, postings: [{account:{id:expense}, amountGross:totalInclVat, amountGrossCurrency:totalInclVat, vatType:{id}, supplier:{id}, row:1}, {account:{id:2400}, amountGross:-totalInclVat, amountGrossCurrency:-totalInclVat, supplier:{id}, row:2}]}.
 
@@ -57,7 +81,7 @@ L. PAYROLL [3-8 calls]: Prerequisites: employee needs dateOfBirth, employment, a
   (4) POST /v2/salary/transaction {date, year, month, payslips:[{employee:{id}, date, year, month, specifications:[{salaryType:{id}, amount, rate, count:1}]}]}. MUST include year field. Use fiscal year 2026. Do NOT use vouchers for payroll.
 
 ## Action
-You MUST use call_api to complete the task. Start immediately — identify the matching recipe, then make the first API call. Never respond with only text.
+You MUST use call_api to complete the task. Start immediately — identify the matching recipe, then make the first API call. Never respond with only text. On 403 auth errors, retry — they are transient. NEVER give up or say you cannot complete the task.
 """
 
 
@@ -127,6 +151,35 @@ class TripletexAgent:
         self.client = tripletex_client
         self.file_contents = file_contents
 
+    def _pre_parse(self, prompt: str) -> str | None:
+        """Translate and normalize the task prompt into a structured English plan."""
+        parse_start = time.time()
+        try:
+            user_input = f"Task prompt:\n{prompt}"
+            if self.file_contents:
+                file_text = "\n\n".join(
+                    f"--- {f['filename']} ---\n{f['extracted_text']}"
+                    for f in self.file_contents
+                )
+                user_input += f"\n\nAttached file contents:\n{file_text}"
+
+            response = self.openai.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": _PRE_PARSE_PROMPT},
+                    {"role": "user", "content": user_input},
+                ],
+                temperature=0,
+            )
+            parsed = response.choices[0].message.content or ""
+            duration = time.time() - parse_start
+            logger.info("Pre-parse completed in %.2fs:\n%s", duration, parsed)
+            return parsed
+        except Exception as e:
+            duration = time.time() - parse_start
+            logger.warning("Pre-parse failed in %.2fs: %s — falling back to raw prompt", duration, e)
+            return None
+
     def solve(self, prompt: str) -> None:
         task_id = uuid.uuid4().hex[:8]
         start_time = time.time()
@@ -135,14 +188,20 @@ class TripletexAgent:
         doc_searches = 0
         logger.info("[%s] Starting agent for prompt: %s", task_id, _truncate(prompt, 200))
 
-        # Build the initial user message
-        user_message = f"Task: {prompt}"
-        if self.file_contents:
-            file_text = "\n\n".join(
-                f"--- {f['filename']} ---\n{f['extracted_text']}"
-                for f in self.file_contents
-            )
-            user_message += f"\n\nAttached file contents:\n{file_text}"
+        # Pre-parse the task prompt
+        parsed_plan = self._pre_parse(prompt)
+
+        if parsed_plan:
+            user_message = f"Pre-parsed task plan:\n{parsed_plan}\n\nOriginal prompt (for reference only):\n{prompt}"
+        else:
+            # Fallback: use raw prompt with file contents
+            user_message = f"Task: {prompt}"
+            if self.file_contents:
+                file_text = "\n\n".join(
+                    f"--- {f['filename']} ---\n{f['extracted_text']}"
+                    for f in self.file_contents
+                )
+                user_message += f"\n\nAttached file contents:\n{file_text}"
 
         messages = [
             {"role": "system", "content": get_system_prompt()},
