@@ -31,4 +31,5 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests"]
 markers = [
     "e2e: end-to-end tests requiring sandbox credentials",
+    "tuning: agent tuning tests using real LLM with mock Tripletex API",
 ]

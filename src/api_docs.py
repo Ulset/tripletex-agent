@@ -36,6 +36,22 @@ ENDPOINT_REGISTRY = [
     ("GET", "/employee", [], "?email=X to find by email"),
     ("GET", "/customer", [], "?organizationNumber=X to find by org number"),
     ("GET", "/department", [], "?fields=id&count=1 to get a department ID"),
+    ("GET", "/supplier", [], "?organizationNumber=X to find by org number"),
+    ("GET", "/ledger/vatType", [], "List all VAT types to find correct ID by name"),
+    ("POST", "/travelExpense", ["employee", "title", "date"],
+     "Create parent travel expense FIRST. Include travelDetails: {departureDate, returnDate, destination, purpose}"),
+    ("GET", "/travelExpense", [], "?employeeId=X to find by employee"),
+    ("DELETE", "/travelExpense/{id}", [], "Delete a travel expense by ID"),
+    ("POST", "/travelExpense/cost", ["travelExpense", "paymentType", "costCategory", "date", "amountCurrencyIncVat"],
+     "travelExpense must be {id: parentId}. Get paymentType from GET /v2/travelExpense/paymentType, costCategory from GET /v2/travelExpense/costCategory"),
+    ("POST", "/travelExpense/accommodationAllowance", ["travelExpense", "location", "count"],
+     "travelExpense must be {id: parentId}. count = number of nights"),
+    ("POST", "/travelExpense/perDiemCompensation", ["travelExpense", "location", "count"],
+     "travelExpense must be {id: parentId}. count = number of days"),
+    ("GET", "/travelExpense/paymentType", [], "List payment types for travel expense costs"),
+    ("GET", "/travelExpense/costCategory", [], "List cost categories for travel expense costs"),
+    ("GET", "/ledger/account", [], "?isBankAccount=true to find bank account. ?number=1920 for standard bank."),
+    ("PUT", "/ledger/account/{id}", ["name", "number"], "Set bankAccountNumber on bank account — REQUIRED before creating invoices"),
 ]
 
 
