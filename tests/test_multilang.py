@@ -31,7 +31,7 @@ class TestMultiLanguagePrompts:
             has_special = any(ord(c) > 127 for c in name)
             assert has_special, f"Language {lang} prompt missing special characters in name"
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_norwegian_bokmal_prompt(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -40,7 +40,7 @@ class TestMultiLanguagePrompts:
         mock_openai_cls.return_value = mock_openai
         mock_openai.chat.completions.create.return_value = _make_text_response("Created Bjørn Ødegård")
 
-        agent = TripletexAgent(openai_api_key="test-key", model="gpt-4o", tripletex_client=MagicMock())
+        agent = TripletexAgent(model="google/gemini-2.5-flash", tripletex_client=MagicMock())
         agent.solve(sample["prompt"])
 
         call_args = mock_openai.chat.completions.create.call_args
@@ -49,7 +49,7 @@ class TestMultiLanguagePrompts:
         assert "Bjørn" in user_msg["content"]
         assert "Ødegård" in user_msg["content"]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_english_prompt(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -58,7 +58,7 @@ class TestMultiLanguagePrompts:
         mock_openai_cls.return_value = mock_openai
         mock_openai.chat.completions.create.return_value = _make_text_response("Done")
 
-        agent = TripletexAgent(openai_api_key="test-key", model="gpt-4o", tripletex_client=MagicMock())
+        agent = TripletexAgent(model="google/gemini-2.5-flash", tripletex_client=MagicMock())
         agent.solve(sample["prompt"])
 
         call_args = mock_openai.chat.completions.create.call_args
@@ -66,7 +66,7 @@ class TestMultiLanguagePrompts:
         user_msg = [m for m in messages if m["role"] == "user"][0]
         assert "François" in user_msg["content"]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_spanish_prompt(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -75,7 +75,7 @@ class TestMultiLanguagePrompts:
         mock_openai_cls.return_value = mock_openai
         mock_openai.chat.completions.create.return_value = _make_text_response("Done")
 
-        agent = TripletexAgent(openai_api_key="test-key", model="gpt-4o", tripletex_client=MagicMock())
+        agent = TripletexAgent(model="google/gemini-2.5-flash", tripletex_client=MagicMock())
         agent.solve(sample["prompt"])
 
         call_args = mock_openai.chat.completions.create.call_args
@@ -84,7 +84,7 @@ class TestMultiLanguagePrompts:
         assert "José" in user_msg["content"]
         assert "Muñoz" in user_msg["content"]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_special_characters_preserved_in_all_languages(self, mock_openai_cls):
         """Verify special characters are preserved for every supported language."""
         from src.agent import TripletexAgent
@@ -93,7 +93,7 @@ class TestMultiLanguagePrompts:
         mock_openai_cls.return_value = mock_openai
         mock_openai.chat.completions.create.return_value = _make_text_response("Done")
 
-        agent = TripletexAgent(openai_api_key="test-key", model="gpt-4o", tripletex_client=MagicMock())
+        agent = TripletexAgent(model="google/gemini-2.5-flash", tripletex_client=MagicMock())
 
         for lang, sample in SAMPLE_PROMPTS.items():
             mock_openai.chat.completions.create.reset_mock()

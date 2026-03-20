@@ -10,8 +10,7 @@ TRIPLETEX_BASE = "https://api.tripletex.io/v2"
 
 def _make_settings():
     return Settings(
-        openai_api_key="test-key",
-        openai_model="gpt-4o",
+        llm_model="google/gemini-2.5-flash",
         port=8000,
         api_key="",
     )
@@ -66,8 +65,8 @@ def _make_tool_call_response(method, endpoint, body=None, params=None, tool_call
 
 
 class TestTaskOrchestrator:
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_agent_based_flow(self, mock_file_openai, mock_agent_openai):
         """Full flow: prompt -> agent loop -> completed."""
         from src.orchestrator import TaskOrchestrator
@@ -92,8 +91,8 @@ class TestTaskOrchestrator:
         assert result.status == "completed"
         mock_client.post.assert_called_once_with("/v2/employee", json={"firstName": "Ola", "lastName": "Nordmann"})
 
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_returns_completed_on_exception(self, mock_file_openai, mock_agent_openai):
         """Orchestrator must always return status=completed even if agent raises."""
         from src.orchestrator import TaskOrchestrator
@@ -105,8 +104,8 @@ class TestTaskOrchestrator:
 
         assert result.status == "completed"
 
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_file_processing_before_agent(self, mock_file_openai, mock_agent_openai):
         """File processing happens before agent is invoked."""
         from src.orchestrator import TaskOrchestrator
@@ -123,8 +122,8 @@ class TestTaskOrchestrator:
         # Agent OpenAI was called (for the agent loop)
         mock_openai.chat.completions.create.assert_called_once()
 
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_orchestrator_creates_client_from_credentials(self, mock_file_openai, mock_agent_openai):
         """Verify TripletexClient is created from request credentials."""
         from src.orchestrator import TaskOrchestrator
@@ -142,8 +141,8 @@ class TestTaskOrchestrator:
                 session_token="test-session",
             )
 
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_logging_preserved(self, mock_file_openai, mock_agent_openai):
         """Existing orchestrator logging (NEW TASK RECEIVED, etc.) is preserved."""
         from src.orchestrator import TaskOrchestrator
@@ -161,8 +160,8 @@ class TestTaskOrchestrator:
         assert any("NEW TASK RECEIVED" in msg for msg in log_messages)
         assert any("Full prompt" in msg for msg in log_messages)
 
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_no_plan_generator_imports(self, mock_file_openai, mock_agent_openai):
         """Orchestrator no longer imports PlanGenerator or PlanExecutor."""
         import src.orchestrator as orch_module

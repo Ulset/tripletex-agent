@@ -3,9 +3,8 @@ import logging
 import time
 import uuid
 
-from openai import OpenAI
-
 from src.api_docs import generate_endpoint_reference, get_endpoint_schema, search_api_docs
+from src.vertex_auth import get_openai_client
 from src.tripletex_client import TripletexAPIError, TripletexClient
 
 logger = logging.getLogger(__name__)
@@ -125,12 +124,11 @@ SEARCH_API_DOCS_TOOL = {
 class TripletexAgent:
     def __init__(
         self,
-        openai_api_key: str,
         model: str,
         tripletex_client: TripletexClient,
         file_contents: list[dict] | None = None,
     ):
-        self.openai = OpenAI(api_key=openai_api_key)
+        self.openai = get_openai_client()
         self.model = model
         self.client = tripletex_client
         self.file_contents = file_contents

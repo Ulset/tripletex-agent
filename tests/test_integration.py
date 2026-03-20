@@ -18,8 +18,7 @@ TRIPLETEX_BASE = "https://api.tripletex.io/v2"
 
 def _settings():
     return Settings(
-        openai_api_key="test-key",
-        openai_model="gpt-4o",
+        llm_model="google/gemini-2.5-flash",
         port=8000,
         api_key="",
     )
@@ -75,8 +74,8 @@ class TestIntegrationCreateEmployee:
     """Full-flow: prompt -> agent tool call -> POST /employee with correct fields."""
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_create_employee_calls_api_with_correct_fields(
         self, mock_file_openai, mock_agent_openai
     ):
@@ -114,8 +113,8 @@ class TestIntegrationCreateCustomer:
     """Full-flow: prompt -> agent tool call -> POST /customer."""
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_create_customer_calls_api_with_correct_fields(
         self, mock_file_openai, mock_agent_openai
     ):
@@ -151,8 +150,8 @@ class TestIntegrationCreateInvoice:
     """Multi-step: POST /customer -> POST /order -> POST /invoice with agent reading IDs from responses."""
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_create_invoice_correct_call_order_and_id_linking(
         self, mock_file_openai, mock_agent_openai
     ):
@@ -200,8 +199,8 @@ class TestIntegrationErrorRecovery:
     """Agent self-heals from API error by reading error message and retrying with correct fields."""
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_error_recovery_agent_retries_with_correct_fields(
         self, mock_file_openai, mock_agent_openai
     ):
@@ -238,8 +237,8 @@ class TestIntegrationErrorRecovery:
         assert success_body["firstName"] == "Kari"
         assert success_body["lastName"] == "Nordmann"
 
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_error_recovery_still_returns_completed(
         self, mock_file_openai, mock_agent_openai
     ):

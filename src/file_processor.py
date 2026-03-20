@@ -2,9 +2,9 @@ import base64
 import logging
 
 import fitz  # pymupdf
-from openai import OpenAI
 
 from src.models import FileAttachment
+from src.vertex_auth import get_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,7 @@ class FileProcessor:
     def process_files(
         self,
         files: list[FileAttachment],
-        openai_api_key: str,
-        openai_model: str,
+        model: str,
     ) -> list[dict]:
         if not files:
             return []
@@ -33,9 +32,9 @@ class FileProcessor:
             extracted = ""
             try:
                 if file.mime_type == "application/pdf":
-                    extracted = self._extract_pdf_text(raw, file, openai_api_key, openai_model)
+                    extracted = self._extract_pdf_text(raw, file, model)
                 elif file.mime_type in IMAGE_MIME_TYPES:
-                    extracted = self._extract_image_text(file.content_base64, file.mime_type, openai_api_key, openai_model)
+                    extracted = self._extract_image_text(file.content_base64, file.mime_type, model)
                 else:
                     logger.warning("Unsupported mime type %s for file %s", file.mime_type, file.filename)
             except Exception:
@@ -49,8 +48,7 @@ class FileProcessor:
         self,
         raw: bytes,
         file: FileAttachment,
-        openai_api_key: str,
-        openai_model: str,
+        model: str,
     ) -> str:
         doc = fitz.open(stream=raw, filetype="pdf")
         text_parts = []
@@ -64,13 +62,12 @@ class FileProcessor:
 
         # Scanned PDF — render pages as images and use vision API
         logger.info("No extractable text in %s, falling back to vision API", file.filename)
-        return self._extract_scanned_pdf_text(raw, openai_api_key, openai_model)
+        return self._extract_scanned_pdf_text(raw, model)
 
     def _extract_scanned_pdf_text(
         self,
         raw: bytes,
-        openai_api_key: str,
-        openai_model: str,
+        model: str,
     ) -> str:
         doc = fitz.open(stream=raw, filetype="pdf")
         image_contents = []
@@ -86,9 +83,9 @@ class FileProcessor:
             )
         doc.close()
 
-        client = OpenAI(api_key=openai_api_key)
+        client = get_openai_client()
         response = client.chat.completions.create(
-            model=openai_model,
+            model=model,
             messages=[
                 {
                     "role": "user",
@@ -105,12 +102,11 @@ class FileProcessor:
         self,
         content_base64: str,
         mime_type: str,
-        openai_api_key: str,
-        openai_model: str,
+        model: str,
     ) -> str:
-        client = OpenAI(api_key=openai_api_key)
+        client = get_openai_client()
         response = client.chat.completions.create(
-            model=openai_model,
+            model=model,
             messages=[
                 {
                     "role": "user",

@@ -47,10 +47,3 @@ def tripletex_client(sandbox_credentials) -> TripletexClient:
     return TripletexClient(base_url=base_url, session_token=session_token)
 
 
-@pytest.fixture
-def openai_api_key() -> str:
-    """Return the OpenAI API key, skip if not set."""
-    key = os.getenv("OPENAI_API_KEY", "")
-    if not key:
-        pytest.skip("OPENAI_API_KEY not configured")
-    return key

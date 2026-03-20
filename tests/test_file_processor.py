@@ -20,7 +20,7 @@ def _make_test_pdf(text: str = "Hello World") -> bytes:
 class TestFileProcessorEmptyFiles:
     def test_returns_empty_list_when_no_files(self):
         fp = FileProcessor()
-        result = fp.process_files([], openai_api_key="key", openai_model="gpt-4o")
+        result = fp.process_files([], model="google/gemini-2.5-flash")
         assert result == []
 
 
@@ -31,7 +31,7 @@ class TestFileProcessorBase64Decoding:
         file = FileAttachment(filename="test.pdf", content_base64=b64, mime_type="application/pdf")
 
         fp = FileProcessor()
-        result = fp.process_files([file], openai_api_key="key", openai_model="gpt-4o")
+        result = fp.process_files([file], model="google/gemini-2.5-flash")
 
         assert len(result) == 1
         assert result[0]["filename"] == "test.pdf"
@@ -45,13 +45,13 @@ class TestFileProcessorPDF:
         file = FileAttachment(filename="invoice.pdf", content_base64=b64, mime_type="application/pdf")
 
         fp = FileProcessor()
-        result = fp.process_files([file], openai_api_key="key", openai_model="gpt-4o")
+        result = fp.process_files([file], model="google/gemini-2.5-flash")
 
         assert len(result) == 1
         assert result[0]["filename"] == "invoice.pdf"
         assert "Invoice #12345" in result[0]["extracted_text"]
 
-    @patch("src.file_processor.OpenAI")
+    @patch("src.file_processor.get_openai_client")
     def test_falls_back_to_vision_for_scanned_pdf(self, mock_openai_cls):
         # Create a PDF with no text (empty page)
         doc = fitz.open()
@@ -70,15 +70,15 @@ class TestFileProcessorPDF:
         file = FileAttachment(filename="scanned.pdf", content_base64=b64, mime_type="application/pdf")
 
         fp = FileProcessor()
-        result = fp.process_files([file], openai_api_key="test-key", openai_model="gpt-4o")
+        result = fp.process_files([file], model="google/gemini-2.5-flash")
 
         assert result[0]["extracted_text"] == "Scanned text from vision"
-        mock_openai_cls.assert_called_once_with(api_key="test-key")
+        mock_openai_cls.assert_called_once()
         mock_client.chat.completions.create.assert_called_once()
 
 
 class TestFileProcessorImage:
-    @patch("src.file_processor.OpenAI")
+    @patch("src.file_processor.get_openai_client")
     def test_extracts_text_from_image(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -91,11 +91,11 @@ class TestFileProcessorImage:
         file = FileAttachment(filename="receipt.png", content_base64=img_b64, mime_type="image/png")
 
         fp = FileProcessor()
-        result = fp.process_files([file], openai_api_key="test-key", openai_model="gpt-4o")
+        result = fp.process_files([file], model="google/gemini-2.5-flash")
 
         assert result[0]["filename"] == "receipt.png"
         assert result[0]["extracted_text"] == "Text from image"
-        mock_openai_cls.assert_called_once_with(api_key="test-key")
+        mock_openai_cls.assert_called_once()
 
         call_args = mock_client.chat.completions.create.call_args
         messages = call_args.kwargs["messages"]
@@ -115,7 +115,7 @@ class TestFileProcessorMultipleFiles:
         ]
 
         fp = FileProcessor()
-        result = fp.process_files(files, openai_api_key="key", openai_model="gpt-4o")
+        result = fp.process_files(files, model="google/gemini-2.5-flash")
 
         assert len(result) == 2
         assert "First document" in result[0]["extracted_text"]

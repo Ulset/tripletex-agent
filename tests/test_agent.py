@@ -53,12 +53,11 @@ class TestTripletexAgent:
     def setup_method(self):
         self.client = MagicMock()
         self.agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_loop_completes_on_text_response(self, mock_openai_cls):
         """Agent should stop when LLM responds with text (no tool calls)."""
         mock_openai = MagicMock()
@@ -66,8 +65,7 @@ class TestTripletexAgent:
         mock_openai.chat.completions.create.return_value = _make_text_response("Done!")
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
         agent.solve("Create a customer named Acme")
@@ -76,7 +74,7 @@ class TestTripletexAgent:
         self.client.get.assert_not_called()
         self.client.post.assert_not_called()
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_tool_call_executed_and_result_sent_back(self, mock_openai_cls):
         """Agent should execute tool calls and return result to LLM."""
         mock_openai = MagicMock()
@@ -90,8 +88,7 @@ class TestTripletexAgent:
         self.client.post.return_value = {"value": {"id": 1, "name": "Acme"}}
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
         agent.solve("Create a customer named Acme")
@@ -99,7 +96,7 @@ class TestTripletexAgent:
         self.client.post.assert_called_once_with("/v2/customer", json={"name": "Acme"})
         assert mock_openai.chat.completions.create.call_count == 2
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_max_iterations_stops_loop(self, mock_openai_cls):
         """Agent should stop after MAX_ITERATIONS even if LLM keeps making tool calls."""
         mock_openai = MagicMock()
@@ -112,8 +109,7 @@ class TestTripletexAgent:
         self.client.get.return_value = {"values": []}
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
         agent.solve("Find customer Acme")
@@ -121,7 +117,7 @@ class TestTripletexAgent:
         assert mock_openai.chat.completions.create.call_count == MAX_ITERATIONS
         assert self.client.get.call_count == MAX_ITERATIONS
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_api_error_returned_to_llm(self, mock_openai_cls):
         """API errors should be sent back to LLM as tool results so it can adapt."""
         mock_openai = MagicMock()
@@ -135,8 +131,7 @@ class TestTripletexAgent:
         self.client.post.side_effect = TripletexAPIError(422, "Missing required field: lastName")
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
         agent.solve("Create an employee named Ola")
@@ -153,7 +148,7 @@ class TestTripletexAgent:
         assert len(tool_results) == 1
         assert "error" in tool_results[0]["content"]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_file_contents_included_in_prompt(self, mock_openai_cls):
         """File contents should be appended to the user message."""
         mock_openai = MagicMock()
@@ -163,8 +158,7 @@ class TestTripletexAgent:
         file_contents = [{"filename": "invoice.pdf", "extracted_text": "Invoice #123"}]
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
             file_contents=file_contents,
         )
@@ -176,7 +170,7 @@ class TestTripletexAgent:
         assert "invoice.pdf" in user_msg["content"]
         assert "Invoice #123" in user_msg["content"]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_get_call_uses_params(self, mock_openai_cls):
         """GET calls should pass params to TripletexClient.get()."""
         mock_openai = MagicMock()
@@ -189,15 +183,14 @@ class TestTripletexAgent:
         self.client.get.return_value = {"values": [{"id": 5}]}
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
         agent.solve("Look up departments")
 
         self.client.get.assert_called_once_with("/v2/department", params={"fields": "id", "count": "1"})
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_delete_call(self, mock_openai_cls):
         """DELETE calls should use TripletexClient.delete()."""
         mock_openai = MagicMock()
@@ -210,8 +203,7 @@ class TestTripletexAgent:
         self.client.delete.return_value = {}
 
         agent = TripletexAgent(
-            openai_api_key="test-key",
-            model="gpt-4o",
+            model="google/gemini-2.5-flash",
             tripletex_client=self.client,
         )
         agent.solve("Delete travel expense 42")
@@ -276,7 +268,7 @@ class TestSystemPrompt:
 class TestAgentLogging:
     """Tests for US-005: Comprehensive logging verification."""
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_iteration_number(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -284,7 +276,7 @@ class TestAgentLogging:
         mock_openai_cls.return_value = mock_openai
         mock_openai.chat.completions.create.return_value = _make_text_response("Done")
 
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=MagicMock())
+        agent = TripletexAgent(model="m", tripletex_client=MagicMock())
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 
@@ -295,7 +287,7 @@ class TestAgentLogging:
         assert call_args[0][1] == 1  # iteration number
         assert call_args[0][2] == 15  # max iterations
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_tool_call_details(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -308,7 +300,7 @@ class TestAgentLogging:
 
         client = MagicMock()
         client.post.return_value = {"value": {"id": 1}}
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=client)
+        agent = TripletexAgent(model="m", tripletex_client=client)
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 
@@ -317,7 +309,7 @@ class TestAgentLogging:
         assert "POST" in tool_logs[0]
         assert "/v2/customer" in tool_logs[0]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_api_response(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -330,14 +322,14 @@ class TestAgentLogging:
 
         client = MagicMock()
         client.post.return_value = {"value": {"id": 1, "name": "Acme"}}
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=client)
+        agent = TripletexAgent(model="m", tripletex_client=client)
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 
         response_logs = [str(c) for c in mock_logger.info.call_args_list if "API response" in str(c)]
         assert len(response_logs) == 1
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_api_error(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -350,14 +342,14 @@ class TestAgentLogging:
 
         client = MagicMock()
         client.post.side_effect = TripletexAPIError(422, "Missing field")
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=client)
+        agent = TripletexAgent(model="m", tripletex_client=client)
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 
         error_logs = [str(c) for c in mock_logger.warning.call_args_list if "API error" in str(c)]
         assert len(error_logs) == 1
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_agent_done(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -365,7 +357,7 @@ class TestAgentLogging:
         mock_openai_cls.return_value = mock_openai
         mock_openai.chat.completions.create.return_value = _make_text_response("Task complete!")
 
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=MagicMock())
+        agent = TripletexAgent(model="m", tripletex_client=MagicMock())
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 
@@ -373,7 +365,7 @@ class TestAgentLogging:
         assert len(done_logs) == 1
         assert "Task complete!" in done_logs[0]
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_max_iterations_reached(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -385,14 +377,14 @@ class TestAgentLogging:
 
         client = MagicMock()
         client.get.return_value = {"values": []}
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=client)
+        agent = TripletexAgent(model="m", tripletex_client=client)
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 
         warning_logs = [str(c) for c in mock_logger.warning.call_args_list if "max iterations" in str(c)]
         assert len(warning_logs) == 1
 
-    @patch("src.agent.OpenAI")
+    @patch("src.agent.get_openai_client")
     def test_logs_summary_with_counts_and_duration(self, mock_openai_cls):
         from src.agent import TripletexAgent
 
@@ -405,7 +397,7 @@ class TestAgentLogging:
 
         client = MagicMock()
         client.post.return_value = {"value": {"id": 1}}
-        agent = TripletexAgent(openai_api_key="k", model="m", tripletex_client=client)
+        agent = TripletexAgent(model="m", tripletex_client=client)
         with patch("src.agent.logger") as mock_logger:
             agent.solve("test")
 

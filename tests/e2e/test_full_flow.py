@@ -13,7 +13,7 @@ from tests.e2e.conftest import skip_no_credentials
 class TestFullFlow:
     """E2E tests running the full orchestrator flow against the Tripletex sandbox."""
 
-    def test_full_flow_create_employee(self, sandbox_credentials, openai_api_key):
+    def test_full_flow_create_employee(self, sandbox_credentials):
         """Send a full SolveRequest through the orchestrator and verify entity creation."""
         base_url, session_token = sandbox_credentials
         unique_id = uuid.uuid4().hex[:6]
@@ -21,8 +21,7 @@ class TestFullFlow:
         last_name = f"Fullflow-{unique_id}"
 
         config = Settings(
-            openai_api_key=openai_api_key,
-            openai_model="gpt-4o",
+            llm_model="google/gemini-2.5-flash",
             port=8000,
             api_key="",
         )

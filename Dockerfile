@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir .
 
 COPY src/ src/
 
-ENV OPENAI_MODEL=gpt-4o
+ENV LLM_MODEL=google/gemini-2.5-flash
 ENV PORT=8080
 
 EXPOSE 8080

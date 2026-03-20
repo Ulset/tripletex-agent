@@ -5,7 +5,7 @@
 - **30 task types**, 56 variants each (7 languages × 8 data sets)
 - **Timeout**: 5 minutes per task
 - **Submission URL**: https://app.ainm.no/submit/tripletex
-- **Endpoint**: https://tripletex-agent-6wzdpvze4a-lz.a.run.app/solve
+- **Endpoint**: https://tripletex-agent-rzkmnmpmpq-lz.a.run.app/solve
 
 ## Submission Results — How to Read Them
 - The **x/7** or **x/8** scores in "Recent Results" are **preliminary checks** (health, format, etc.)
@@ -24,24 +24,23 @@ gcloud run deploy tripletex-agent \
   --memory 512Mi \
   --timeout 300 \
   --port 8080 \
-  --project nm-i-ai-944963 \
-  --set-env-vars "OPENAI_API_KEY=<key>"
+  --project ainm26osl-716
 ```
-- API key is NOT in the Dockerfile (GitHub push protection blocks it)
-- Must pass `--set-env-vars` on every deploy
+- No `--set-env-vars` needed — Vertex AI uses service account auth automatically
+- Model is Gemini 2.5 Flash by default, change via `--set-env-vars "LLM_MODEL=google/gemini-2.5-pro"` for more reasoning power
 - Don't deploy while a submission is in-flight — the request can get lost
 
 ## Reading Logs
 ```bash
 # All task logs from latest revision
 gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="tripletex-agent" AND jsonPayload.message=~"NEW TASK|Tool call|API response|API error|Agent done|Agent summary|Docs search"' \
-  --project nm-i-ai-944963 --limit 60 \
+  --project ainm26osl-716 --limit 60 \
   --format "table(timestamp,jsonPayload.message)"
 ```
 
 ## Browser / Submission
 - If the browser session expires, open a new Chrome window — user will log in
-- Fill endpoint URL: `https://tripletex-agent-6wzdpvze4a-lz.a.run.app/solve`
+- Fill endpoint URL: `https://tripletex-agent-rzkmnmpmpq-lz.a.run.app/solve`
 - Click Submit
 
 ## Architecture

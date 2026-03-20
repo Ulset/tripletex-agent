@@ -33,8 +33,7 @@ class TaskOrchestrator:
             processor = FileProcessor()
             file_contents = processor.process_files(
                 request.files,
-                self.config.openai_api_key,
-                self.config.openai_model,
+                self.config.llm_model,
             )
             logger.info("Processed %d files", len(file_contents))
 
@@ -44,8 +43,7 @@ class TaskOrchestrator:
                 session_token=request.tripletex_credentials.session_token,
             )
             agent = TripletexAgent(
-                openai_api_key=self.config.openai_api_key,
-                model=self.config.openai_model,
+                model=self.config.llm_model,
                 tripletex_client=client,
                 file_contents=file_contents if file_contents else None,
             )

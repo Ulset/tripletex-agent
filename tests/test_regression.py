@@ -19,8 +19,7 @@ TRIPLETEX_BASE = "https://api.tripletex.io/v2"
 
 def _settings():
     return Settings(
-        openai_api_key="test-key",
-        openai_model="gpt-4o",
+        llm_model="google/gemini-2.5-flash",
         port=8000,
         api_key="",
     )
@@ -101,8 +100,8 @@ class TestPostalAddressFormat:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_postal_address_is_object_not_string(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -148,8 +147,8 @@ class TestEmployeeRequiredFields:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_employee_includes_all_required_fields(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -205,8 +204,8 @@ class TestEmploymentSeparateEntity:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_employment_created_separately(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -273,8 +272,8 @@ class TestProjectRequiresStartDate:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_project_includes_start_date(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -318,8 +317,8 @@ class TestSelfHealFromValidationError:
 
     @responses.activate
     @patch("src.agent.get_endpoint_schema", return_value=None)
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_agent_retries_after_422_with_missing_field(self, mock_file_openai, mock_agent_openai, mock_get_schema):
         from src.orchestrator import TaskOrchestrator
 
@@ -380,8 +379,8 @@ class TestDocSearchNotExcessive:
 
     @responses.activate
     @patch("src.agent.search_api_docs")
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_agent_limits_doc_searches(self, mock_file_openai, mock_agent_openai, mock_search_docs):
         from src.orchestrator import TaskOrchestrator
 
@@ -423,8 +422,8 @@ class TestSupplierIncludesOrgNumber:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_supplier_has_organization_number(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -467,8 +466,8 @@ class TestPaymentUsesQueryParams:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_put_payment_sends_query_params(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -512,8 +511,8 @@ class TestDocSearchLimitEnforced:
 
     @responses.activate
     @patch("src.agent.search_api_docs")
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_third_doc_search_returns_limit_message(self, mock_file_openai, mock_agent_openai, mock_search_docs):
         from src.orchestrator import TaskOrchestrator
 
@@ -558,8 +557,8 @@ class TestPaymentFullWorkflow:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_payment_workflow_find_and_pay(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
@@ -625,8 +624,8 @@ class TestSchemaHintOn422:
 
     @responses.activate
     @patch("src.agent.get_endpoint_schema")
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_422_error_includes_schema_hint(self, mock_file_openai, mock_agent_openai, mock_get_schema):
         from src.orchestrator import TaskOrchestrator
 
@@ -679,8 +678,8 @@ class TestSchemaHintOn422:
 
     @responses.activate
     @patch("src.agent.get_endpoint_schema")
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_non_422_error_no_schema_hint(self, mock_file_openai, mock_agent_openai, mock_get_schema):
         from src.orchestrator import TaskOrchestrator
 
@@ -751,8 +750,8 @@ class TestMultipleDepartments:
     """
 
     @responses.activate
-    @patch("src.agent.OpenAI")
-    @patch("src.file_processor.OpenAI")
+    @patch("src.agent.get_openai_client")
+    @patch("src.file_processor.get_openai_client")
     def test_creates_three_departments(self, mock_file_openai, mock_agent_openai):
         from src.orchestrator import TaskOrchestrator
 
