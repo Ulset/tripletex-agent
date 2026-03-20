@@ -50,7 +50,7 @@ def run_agent():
         from src.agent import TripletexAgent
 
         if model is None:
-            model = os.getenv("LLM_MODEL", "google/gemini-2.5-flash")
+            model = os.getenv("LLM_MODEL", "google/gemini-2.5-pro")
 
         agent = TripletexAgent(
             model=model,

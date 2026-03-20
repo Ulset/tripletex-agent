@@ -93,7 +93,7 @@ class TestSupplierInvoice:
         assert has_invoice_ref, "Should reference invoice number INV-2026-8662"
 
         result.assert_no_errors()
-        result.assert_max_calls(8)
+        result.assert_max_calls(7)
 
     def test_supplier_invoice_english(self, run_agent):
         """English variant: register supplier invoice."""
@@ -111,4 +111,4 @@ class TestSupplierInvoice:
 
         result.assert_endpoint_called("POST", "/v2/ledger/voucher")
         result.assert_no_errors()
-        result.assert_max_calls(8)
+        result.assert_max_calls(7)

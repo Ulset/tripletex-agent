@@ -217,7 +217,8 @@ gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.serv
 ```bash
 python3 -m pytest --tb=short                       # unit + integration (108 tests)
 python3 -m pytest tests/e2e/ -m e2e -v             # e2e against sandbox (needs env vars)
-python3 -m pytest tests/tuning -v -s --capture=no  # tuning tests: real LLM + mock API (needs Vertex AI)
+python3 -m pytest tests/tuning -v -n auto          # tuning tests in PARALLEL (fast, ~1-2 min)
+python3 -m pytest tests/tuning -v -s --capture=no  # tuning tests sequential with output (slow, ~6 min)
 ```
 
 ### Tuning Tests

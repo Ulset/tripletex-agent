@@ -83,7 +83,7 @@ class TestFixedPriceProject:
         result.assert_endpoint_called("PUT", "/:invoice")
 
         result.assert_no_errors()
-        result.assert_max_calls(12)
+        result.assert_max_calls(10)
 
     def test_create_fixed_price_project_norwegian(self, run_agent):
         """Norwegian variant: fixed-price project + partial invoice."""
@@ -110,4 +110,4 @@ class TestFixedPriceProject:
         result.assert_endpoint_called("PUT", "/:invoice")
 
         result.assert_no_errors()
-        result.assert_max_calls(12)
+        result.assert_max_calls(10)

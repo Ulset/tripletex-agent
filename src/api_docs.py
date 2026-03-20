@@ -68,6 +68,9 @@ ENDPOINT_REGISTRY = [
     ("GET", "/activity/>forTimeSheet", [], "?projectId=X (REQUIRED) to find applicable activities"),
     ("POST", "/activity", ["name"], "isProjectActivity(true), isChargeable(true) for billable project activities"),
     ("GET", "/supplier", [], "?organizationNumber=X to find by org number"),
+    ("POST", "/salary/transaction", ["date", "year", "month", "payslips"],
+     "Create salary payment. Payslips contain employee and specifications with salaryType, amount, rate, count."),
+    ("GET", "/salary/type", [], "?name=X to find salary types (Fastlønn, Bonus, etc.)"),
 ]
 
 
